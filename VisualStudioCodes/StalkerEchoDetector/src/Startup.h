@@ -98,4 +98,4 @@ static unsigned char ClearSky_Startup_bits[] = {
 
 
 void play_tune(int tune, uint8_t pin);
-void ToneOut(int pitch, int durationn, uint8_t buzzerPin);
+void ToneOut(int pitch, int duration, uint8_t buzzerPin);

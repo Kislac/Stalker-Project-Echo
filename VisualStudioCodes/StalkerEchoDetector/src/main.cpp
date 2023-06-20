@@ -1,15 +1,8 @@
-
-
-
-
 #include <Arduino.h>
-int LedPower = 0;
-#define LEDpin 33
-
-
 //#include <Energia.h>
 //#include <stdint.h>
 #include <Geiger.h>
+
 
 #include <U8g2lib.h>
 #include <U8x8lib.h>
@@ -20,9 +13,6 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 //U8X8_SH1106_128X64_NONAME_HW_I2C u8x8(/* reset=*/ U8X8_PIN_NONE);
 
 
-
-
-
 //OTA
 //#include <Arduino.h>
 #include <WiFi.h>
@@ -30,8 +20,8 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 
-const char* ssid = "KisMegaNet";
-const char* password = "BicskeCity";
+const char* ssid = "Kis-Szikora";
+const char* password = "KisHangya";
 //
 
 #include <Startup.h>
@@ -49,8 +39,9 @@ const char* password = "BicskeCity";
 #define buttonPin3  27
 #define buttonPin4  14
 
+#define LEDpin 33
 
-
+int LedPower = 0;
 
 bool buttonPin1_state=1;
 bool buttonPin2_state=1;
@@ -68,6 +59,18 @@ bool LED_on = false;
 
 uint8_t IconState = 0;
 
+char WifiStatusReturn [7][100] = 
+	{
+		"0 : WL_IDLE_STATUS: Wi-Fi is in process of changing between statuses",
+		"1 : WL_NO_SSID_AVAIL: configured SSID cannot be reached",
+		"2 : WL_SCAN_COMPLETED",
+		"3 : WL_CONNECTED: successful connection is established",
+		"4 : WL_CONNECT_FAILED: if password is incorrect",
+		"5 : WL_CONNECTION_LOST:",
+		"6 : WL_DISCONNECTED: module is not configured in station mode"
+	};
+
+
 void setLED(int LedPower);
 void AliveAnimation();
 void DisplayUpdater();
@@ -78,15 +81,22 @@ void ProcessSerialInput();
 
 
 void setup() {
-Serial.begin(115200);
+  Serial.begin(115200);
   Serial.println("Booting");
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    Serial.println("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
+  uint8_t WifiTimeoutCounter = 0;
+  while (WiFi.status() != WL_CONNECTED  && WifiTimeoutCounter != 20) {
+    WifiTimeoutCounter++;
+    delay(500);
   }
+  if(WifiTimeoutCounter != 20){
+    Serial.println(" Successfully connected to the Wifi!"); 
+  	Serial.print("Local IP address: "); Serial.println(WiFi.localIP());
+  }else{
+  	Serial.println("Timeout! Couldn't connect!"); 
+  }
+  Serial.printf("Connection status: %s\n", WifiStatusReturn[WiFi.status()]);
 
 ArduinoOTA
     .onStart([]() {
@@ -104,30 +114,27 @@ ArduinoOTA
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+        //Write OTA flashing to the screen
+        u8g2.clearBuffer(); // clear the internal memory
+        u8g2.setFont(u8g2_font_helvR08_tr);
+        u8g2.setCursor(10,15); 
+        u8g2.print("FW Updating");
+        u8g2.setCursor(10,28); 
+        u8g2.print("Over the Air");
+        u8g2.drawFrame(7,35,120,16);
 
-u8g2.clearBuffer(); // clear the internal memory
-u8g2.setFont(u8g2_font_helvR08_tr);
-u8g2.setCursor(10,15); 
-u8g2.print("FW Updating");
-u8g2.setCursor(10,28); 
-u8g2.print("Over the Air");
+        u8g2.setFontMode(1);  /* activate transparent font mode */
+        u8g2.setDrawColor(1); /* color 1 for the box */
 
-u8g2.drawFrame(7,35,120,16);
+        u8g2.drawBox(7, 35, map((progress / (total / 100)),0,100,7,120), 16);
+        u8g2.setFont(u8g2_font_ncenB14_tf);
+        u8g2.setCursor(55,50); 
+        u8g2.setDrawColor(2);
+        //u8g2.print(Progress);u8g2.print("%");
+        u8g2.print((progress / (total / 100)));u8g2.print("%");
 
-u8g2.setFontMode(1);  /* activate transparent font mode */
-u8g2.setDrawColor(1); /* color 1 for the box */
-
-u8g2.drawBox(7, 35, map((progress / (total / 100)),0,100,7,120), 16);
-u8g2.setFont(u8g2_font_ncenB14_tf);
-u8g2.setCursor(55,50); 
-u8g2.setDrawColor(2);
-//u8g2.print(Progress);u8g2.print("%");
-u8g2.print((progress / (total / 100)));u8g2.print("%");
-
-//u8g2.drawStr(60, 35, Progress);
-u8g2.sendBuffer();
-
-
+        //u8g2.drawStr(60, 35, Progress);
+        u8g2.sendBuffer();
 
     })
     .onError([](ota_error_t error) {
@@ -168,27 +175,6 @@ u8g2.sendBuffer();
   play_tune(1, buzzerPin);
   delay(2000);
 
-
-
-
-//wifi
-WiFi.begin("KisMegaNet", "BicskeCity");
-  uint32_t notConnectedCounter = 0;
-  while (WiFi.status() != WL_CONNECTED) {
-      delay(100);
-      Serial.println("Wifi connecting...");
-      notConnectedCounter++;
-      if(notConnectedCounter > 150) { // Reset board if not connected after 15s
-          Serial.println("Resetting due to Wifi not connecting...");
-          ESP.restart();
-      }
-  }
-  Serial.print("Wifi connected, IP address: ");
-  Serial.println(WiFi.localIP());
-  /**
-   * Enable OTA update
-   */
-  ArduinoOTA.begin();
 
 }
 
@@ -428,6 +414,10 @@ void DisplayUpdater(){
   }
 
 
+
+
+
+
 void ProcessSerialInput(){
 // process any serial input
   if (Serial.available() > 0)
@@ -518,6 +508,3 @@ void ProcessSerialInput(){
 
   }
 }
-
-
-
