@@ -97,7 +97,7 @@ uint32_t packetCount = 0;
   //RFM69_ATC radio(5,16,true);
   RFM69_ATC radio(PA4,PA3,true);//(PA8, PA3, true, PA3);
 #else
-  RFM69 radio(5,16,true);
+  RFM69 radio(PA4,PA3,true);
 #endif
 
 void ResetRadio()
@@ -164,8 +164,7 @@ u8g2.enableUTF8Print();
   Serial.println("RFM69_ATC Enabled (Auto Transmission Control)\n");
 #endif
 
-  u8g2.begin();  
-  u8g2.enableUTF8Print();
+
   //u8g2.setDisplayRotation(U8G2_R2);
 
 }
@@ -179,7 +178,7 @@ void loop() {
   DisplayUpdater();
   ProcessSerialInput();  
   RFM_Send_msg();
-
+  radio.setPowerLevel(30);
 }
 
 void ProcessSerialInput(){
