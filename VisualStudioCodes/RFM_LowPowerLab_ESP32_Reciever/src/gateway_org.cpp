@@ -43,9 +43,9 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 // Address 0 is special (broadcast), messages to address 0 are received by all *listening* nodes (ie. active RX mode)
 // Gateway ID should be kept at ID=1 for simplicity, although this is not a hard constraint
 //*********************************************************************************************
-#define NODEID        2    // keep UNIQUE for each node on same network
+#define NODEID        1    // keep UNIQUE for each node on same network
 #define NETWORKID     100  // keep IDENTICAL on all nodes that talk to each other
-#define GATEWAYID     1    // "central" node
+#define GATEWAYID     2    // "central" node
 
 //*********************************************************************************************
 // Frequency should be set to match the radio module hardware tuned frequency,
