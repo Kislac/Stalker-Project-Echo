@@ -81,7 +81,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 int TRANSMITPERIOD = 500; //transmit a packet to gateway so often (in ms)
 char payload[] = "123456789";
 char buff[20];
-byte sendSize=0;
+byte sendSize=1;
 boolean requestACK = false;
 //SPIFlash flash(SS_FLASHMEM, 0xEF30); //EF30 for 4mbit  Windbond chip (W25X40CL)
 
@@ -89,6 +89,7 @@ boolean requestACK = false;
   RFM69_ATC radio(5,16,true);
 #else
   RFM69 radio(5,16,true);
+  //RFM69 radio;
 #endif
 
 bool spy = false; //set to 'true' to sniff all packets on the same network
@@ -147,6 +148,9 @@ bool Button_Yellow_state_Prev = 1;
 bool Button_Green_state_Prev = 1;
 bool Button_Red_state_Prev = 1;
 
+bool SendMsgFlag = true;
+bool ReciveMsgFlag = false;
+
 
 const uint8_t GraphResPixel = 5;
 const uint8_t RSSI_LogSize = 25;//126/GraphResPixel;//20
@@ -161,7 +165,7 @@ int8_t Second_Y;
 
 
 
-uint8_t BITRATE_Counter = 12;
+uint8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
 {	RF_BITRATELSB_1200	,	RF_BITRATEMSB_1200	}	,
 {	RF_BITRATELSB_2400	,	RF_BITRATEMSB_2400	}	,
@@ -238,8 +242,8 @@ void setup() {
   ResetRadio();
   radio.initialize(FREQUENCY,NODEID,NETWORKID);
 
-//radio.writeReg(REG_BITRATEMSB, RF_BITRATEMSB_25000); // setup- function, after radio.initialize(...)
-//radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after radio.initialize(...)
+radio.writeReg(REG_BITRATEMSB, RF_BITRATEMSB_25000); // setup- function, after radio.initialize(...)
+radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after radio.initialize(...)
 
 
 #ifdef IS_RFM69HW_HCW
@@ -247,7 +251,8 @@ void setup() {
 #endif
 
 #ifdef ENCRYPTKEY
-  radio.encrypt(ENCRYPTKEY);
+  //radio.encrypt(ENCRYPTKEY);
+  radio.encrypt(NULL);
 #endif
 
 #ifdef FREQUENCY_EXACT
@@ -283,8 +288,8 @@ long lastPeriod = 0;
 void loop() {
   DisplayUpdater();
   ProcessSerialInput();
-  RFM_Recive_msg();
-  RFM_Send_msg();
+  if(ReciveMsgFlag == true){RFM_Recive_msg();}
+  if(SendMsgFlag == true){RFM_Send_msg();}
   ButtonHandler();
   //delay(1);
 }
@@ -308,8 +313,87 @@ void ProcessSerialInput(){
     if (input == 'r') //d=dump register values
       radio.readAllRegs();
 
+    if (input == 'E') //E=enable encryption
+      radio.encrypt(ENCRYPTKEY);
+    if (input == 'e') //e=disable encryption
+      radio.encrypt(null);
+if (input == 'i') // print all available setup infos
+    {
+      Serial.println();
+      Serial.println("***************************************************************************");
+      //return name of file and compile date/time
+      Serial.println(__FILE__ " " __DATE__ " " __TIME__);
+      
+      //Serial.print("Slave Select Pin: ");
+      //Serial.println(radio.getSlaveSelectPin());
+      //Serial.print("Interrupt Pin: ");
+      //Serial.println(radio.getInterruptPin());
+      //Serial.print("Interrupt Number: ");
+      //Serial.println(radio.getInterruptNumber());
+      //Serial.print("Is RFM69HW: ");
+      //Serial.println(radio.getHighPower());
+      Serial.print("Power Level: ");
+      Serial.println(radio.getPowerLevel());
+      Serial.print("Frequency: ");
+      Serial.println(radio.getFrequency());
+      //Serial.print("NODEID: ");
+      //Serial.println(radio.getAdress());
+      //Serial.print("NETWORKID: ");
+      //Serial.println(radio.getNetwork());
 
-    
+      //Serial.print("Test Pin (LED on STM32F103C Bluepill): ");
+      //Serial.println(radio.getTestPin());
+      Serial.println("***************************************************************************");
+      Serial.println();
+    }
+    if (input == 't')
+    {
+      byte temperature =  radio.readTemperature(-1); // -1 = user cal factor, adjust for correct ambient
+      byte fTemp = 1.8 * temperature + 32; // 9/5=1.8
+      Serial.print( "Radio Temp is ");
+      Serial.print(temperature);
+      Serial.print("C, ");
+      Serial.print(fTemp); //converting to F loses some resolution, obvious when C is on edge between 2 values (ie 26C=78F, 27C=80F)
+      Serial.println('F');
+    }    
+    if (input == 'y')
+    {
+      ReciveMsgFlag = !ReciveMsgFlag;
+      Serial.printf("ReciveMsgFlag: ",ReciveMsgFlag);
+    }
+    if (input == 'x')
+    {
+      SendMsgFlag = !SendMsgFlag;
+      Serial.printf("SendMsgFlag: ",SendMsgFlag);
+    }  
+    if (input == 'c')
+    {
+      PowerLevel++;
+      if (PowerLevel>23) PowerLevel = 23;
+      radio.setPowerLevel(PowerLevel);
+    }
+    if (input == 'v')
+    {
+      PowerLevel--;
+      if (PowerLevel>23) PowerLevel = 23;
+      radio.setPowerLevel(PowerLevel);
+    } 
+    if (input == 'b')
+    {
+      BITRATE_Counter--;
+      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
+      radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
+      radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
+    }
+    if (input == 'n')
+    {
+      BITRATE_Counter++;
+      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
+      radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
+      radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
+    }   
+
+
   }
 
 }
@@ -335,28 +419,30 @@ if (radio.receiveDone())
     Serial.print("   [RX_RSSI:");Serial.print(CurrentRSSI);Serial.print("]");
     packetCount_Prev = packetCount; 
 
-    for(int i=RSSI_LogSize-1; i>0;i--){
-      RSSI_Log[i]=RSSI_Log[i-1];
-    }
-    RSSI_Log[0] = CurrentRSSI;
 
-//    for(int i=0; i<RSSI_LogSize;i++)
-//    {Serial.printf("[%d]",RSSI_Log[i]);}
 
-//    uint8_t VisualiseSection = 100/GraphResPixel; //-->20
-//    Serial.printf("\n GraphResPixel: %d , VisualiseSection: %d\n",GraphResPixel, VisualiseSection);
-//    for (int i = 0;i<VisualiseSection; i++){
+for(int i=RSSI_LogSize-1; i>0;i--){
+  RSSI_Log[i]=RSSI_Log[i-1];
+}
+RSSI_Log[0] = CurrentRSSI;
+
+//SerialPrint Diagram
+    //for(int i=0; i<RSSI_LogSize;i++)
+    //{Serial.printf("[%d]",RSSI_Log[i]);}
+    //uint8_t VisualiseSection = 100/GraphResPixel; //-->20
+    //Serial.printf("\n GraphResPixel: %d , VisualiseSection: %d\n",GraphResPixel, VisualiseSection);
+    //for (int i = 0;i<VisualiseSection; i++){
 //
-//      First_X = 25+i*GraphResPixel;
-//      Second_X = 25+5+i*GraphResPixel;
+    //  First_X = 25+i*GraphResPixel;
+    //  Second_X = 25+5+i*GraphResPixel;
 //
-//      First_RSSI = RSSI_Log[VisualiseSection-i];
-//      Second_RSSI = RSSI_Log[VisualiseSection-1-i];
-//
-//      First_Y = map(First_RSSI,-100,-10,62,34);
-//      Second_Y = map(Second_RSSI,-100,-10,62,34);
-//      Serial.printf("|i:%d F_X:%d F_Y:%d/%d S_X:%d S_Y:%d/%d| \n", i, First_X,First_RSSI,First_Y,Second_X,Second_RSSI,Second_Y);
-//    }
+    //  First_RSSI = RSSI_Log[VisualiseSection-i];
+    //  Second_RSSI = RSSI_Log[VisualiseSection-1-i];
+    //  
+    //  First_Y = map(First_RSSI,-100,-10,62,34);
+    //  Second_Y = map(Second_RSSI,-100,-10,62,34);
+    //  Serial.printf("|i:%d F_X:%d F_Y:%d/%d S_X:%d S_Y:%d/%d| \n", i, First_X,First_RSSI,First_Y,Second_X,Second_RSSI,Second_Y);
+    //}
 
 //-----------ACK------------------
 //    if (radio.ACKRequested())
@@ -384,7 +470,7 @@ if (radio.receiveDone())
 
     Serial.println();
     //Blink(LED_BUILTIN,3);
-    Blink(33,3);
+    Blink(33,1);
   }
 }
 
@@ -419,10 +505,10 @@ void RFM_Send_msg(){
     if(sendSize==0)
     {
 
-      byte buffLen=strlen(buff);
-      if (radio.sendWithRetry(GATEWAYID, buff, buffLen))
-        Serial.print(" ok!");
-      else Serial.print(" nothing...");
+      //byte buffLen=strlen(buff);
+      //if (radio.sendWithRetry(GATEWAYID, buff, buffLen))
+      //  Serial.print(" ok!");
+      //else Serial.print(" nothing...");
       //sendSize = (sendSize + 1) % 31;
     }
     else
@@ -436,14 +522,19 @@ void RFM_Send_msg(){
       }
         
       sentMSGCounter++;
-      if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
-       Serial.print(" ok!");
-      else Serial.print(" nothing...");
+      sendSize++;
+      if(sendSize>5){
+        sendSize=1;
+      }
+      radio.send(GATEWAYID, payload, sendSize);
+      //if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
+      // Serial.print(" ok!");
+      //else Serial.print(" nothing...");
     }
     //sendSize = (sendSize + 1) % 31;
-    sendSize = (sendSize + 1) % 10;
+    //sendSize = (sendSize + 1) % 4;
     Serial.println();
-    Blink(LED_BUILTIN,3);
+    Blink(LED_BUILTIN,1);
     //Blink(33,3);
   }
 }
@@ -561,7 +652,7 @@ for (int i = 0;i<VisualiseSection; i++){
 void AliveAnimation(){
 
 
-  if (millis() - previousMillis_LoadingIcon >= 500) {
+  if (millis() - previousMillis_LoadingIcon >= 100) {
     // save the last time you blinked the LED
     previousMillis_LoadingIcon = millis();
     IconState++;
@@ -682,7 +773,7 @@ void ButtonHandler(){
     if(Button_Green_state==0){
       //code
       BITRATE_Counter++;
-      if (BITRATE_Counter>22) PowerLevel = 22;
+      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
     }
@@ -692,7 +783,7 @@ void ButtonHandler(){
     if(Button_Red_state==0){
       //code
       BITRATE_Counter--;
-      if (BITRATE_Counter>22) PowerLevel = 22;
+      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
     }
