@@ -86,11 +86,11 @@ void setup() {
   WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
   uint8_t WifiTimeoutCounter = 0;
-  while (WiFi.status() != WL_CONNECTED  && WifiTimeoutCounter != 20) {
+  while (WiFi.status() != WL_CONNECTED  && WifiTimeoutCounter != 2) {
     WifiTimeoutCounter++;
     delay(500);
   }
-  if(WifiTimeoutCounter != 20){
+  if(WifiTimeoutCounter != 2){
     Serial.println(" Successfully connected to the Wifi!"); 
   	Serial.print("Local IP address: "); Serial.println(WiFi.localIP());
   }else{
