@@ -1,4 +1,4 @@
-//pio device monitor -p COM6 -b 115200
+//pio device monitor -p COM5 -b 115200
 // Sample RFM69 sender/node sketch, with ACK and optional encryption, and Automatic Transmission Control
 // Sends periodic messages of increasing length to gateway (id=1)
 // It also looks for an onboard FLASH chip, if present
@@ -35,7 +35,10 @@
 #ifdef U8X8_HAVE_HW_I2C
 #include <Wire.h>
 #endif
-U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  
+U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE); 
+
+
+#include <Geiger.h>
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE ************
 //*********************************************************************************************
@@ -77,6 +80,9 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 #define Button_Green 27
 #define Button_Red 14
 
+
+#define buzzerPin 32
+#define LEDpin 33
 
 int TRANSMITPERIOD = 500; //transmit a packet to gateway so often (in ms)
 char payload[] = "ABCDEFGHIJK";
@@ -128,7 +134,7 @@ uint32_t packetCount = 0;
 byte ackCount=0;
 int CurrentRSSI = 0;
 
-uint8_t PowerLevel = 23;
+int8_t PowerLevel = 23;
 
 char IncomingMsg_char[230];
 int IncomingMsg_int[230];
@@ -163,9 +169,10 @@ int8_t First_Y;
 int8_t Second_Y;
 
 
+int8_t BuzzerIntensity= 0;
+uint8_t BuzzerVolume = 100;
 
-
-uint8_t BITRATE_Counter = 6;
+int8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
 {	RF_BITRATELSB_1200	,	RF_BITRATEMSB_1200	}	,
 {	RF_BITRATELSB_2400	,	RF_BITRATEMSB_2400	}	,
@@ -232,10 +239,9 @@ void setup() {
       pinMode(Button_Green, INPUT_PULLUP);
       pinMode(Button_Red, INPUT_PULLUP);
 
-//pinMode(Button_Blue, INPUT);
-//pinMode(Button_Yellow, INPUT);
-//pinMode(Button_Green, INPUT);
-//pinMode(Button_Red, INPUT);
+      pinMode(LEDpin, OUTPUT);
+      pinMode(buzzerPin, OUTPUT);
+
 
 
   Serial.begin(SERIAL_BAUD);
@@ -292,6 +298,9 @@ void loop() {
   if(SendMsgFlag == true){RFM_Send_msg();}
   ButtonHandler();
   //delay(1);
+
+  //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
+  Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
 }
 
 
@@ -359,32 +368,35 @@ if (input == 'i') // print all available setup infos
     if (input == 'y')
     {
       ReciveMsgFlag = !ReciveMsgFlag;
-      Serial.printf("ReciveMsgFlag: ",ReciveMsgFlag);
+      Serial.printf("ReciveMsgFlag: %d\n",ReciveMsgFlag);
     }
     if (input == 'x')
     {
       SendMsgFlag = !SendMsgFlag;
-      Serial.printf("SendMsgFlag: ",SendMsgFlag);
+      Serial.printf("SendMsgFlag: %d\n",SendMsgFlag);
     }  
-  }
+  
   if (input == 'c')
     {
       PowerLevel++;
       if (PowerLevel>23) PowerLevel = 23;
       radio.setPowerLevel(PowerLevel);
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     }
     if (input == 'v')
     {
       PowerLevel--;
-      if (PowerLevel>23) PowerLevel = 23;
+      if (PowerLevel<0) PowerLevel = 0;
       radio.setPowerLevel(PowerLevel);
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     } 
     if (input == 'b')
     {
       BITRATE_Counter--;
-      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
+      if (BITRATE_Counter<0) {BITRATE_Counter = 0;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     }
     if (input == 'n')
     {
@@ -392,7 +404,41 @@ if (input == 'i') // print all available setup infos
       if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
-    }  
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
+    }
+    if (input == 'p')
+    {
+      ResetRadio(); 
+    }
+    if (input == 'k')
+    {
+
+      BuzzerIntensity++; 
+      if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
+      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+    }
+    if (input == 'l')
+    {
+      BuzzerIntensity--;
+      if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
+      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+    }
+    //BuzzerVolume
+    if (input == 'h')
+    {
+      BuzzerVolume++; 
+      //if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
+      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+    }
+    if (input == 'j')
+    {
+      BuzzerVolume--;
+      //if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
+      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+    }
+    
+
+  }
 
 }
 
@@ -423,6 +469,10 @@ for(int i=RSSI_LogSize-1; i>0;i--){
   RSSI_Log[i]=RSSI_Log[i-1];
 }
 RSSI_Log[0] = CurrentRSSI;
+BuzzerIntensity = map(CurrentRSSI,-100,-40,0,100);
+if (BuzzerIntensity>99) {BuzzerIntensity = 100;}
+if (BuzzerIntensity<=0) {BuzzerIntensity = 0;}
+//Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
 
 //SerialPrint Diagram
     //for(int i=0; i<RSSI_LogSize;i++)
@@ -468,7 +518,7 @@ RSSI_Log[0] = CurrentRSSI;
 
     Serial.println();
     //Blink(LED_BUILTIN,3);
-    Blink(33,1);
+    Blink(LEDpin,1);
   }
 }
 
@@ -586,7 +636,7 @@ void DisplayUpdater(){
 
 
     u8g2.setCursor(0,39); 
-    u8g2.printf("-10dbi");
+    u8g2.printf("-30dbi");
     u8g2.setCursor(0,62); 
     u8g2.printf("-100dbi");
     u8g2.drawLine(25, 33, 25, 63);
@@ -628,8 +678,8 @@ for (int i = 0;i<VisualiseSection; i++){
   First_RSSI = RSSI_Log[VisualiseSection-i];
   Second_RSSI = RSSI_Log[VisualiseSection-1-i];
 
-  First_Y = map(First_RSSI,-100,-10,62,34);
-  Second_Y = map(Second_RSSI,-100,-10,62,34);
+  First_Y = map(First_RSSI,-100,-30,62,34);
+  Second_Y = map(Second_RSSI,-100,-30,62,34);
 
 //  Serial.printf("|i:%d F_X:%d F_Y:%d/%d S_X:%d S_Y:%d/%d| \n", i, First_X,First_RSSI,First_Y,Second_X,Second_RSSI,Second_Y);
   u8g2.drawLine(First_X, First_Y, Second_X, Second_Y);
