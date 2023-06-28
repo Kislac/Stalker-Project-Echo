@@ -1,4 +1,4 @@
-//pio device monitor -p COM6 -b 115200
+//pio device monitor -p COM4 -b 115200
 // Sample RFM69 sender/node sketch, with ACK and optional encryption, and Automatic Transmission Control
 // Sends periodic messages of increasing length to gateway (id=1)
 // It also looks for an onboard FLASH chip, if present
@@ -97,7 +97,7 @@ bool spy = false; //set to 'true' to sniff all packets on the same network
 void ResetRadio()
 {
   digitalWrite(RESET_PIN, HIGH);
-  delay(50);
+  delay(100);
   digitalWrite(RESET_PIN, LOW);
   Serial.println("Radio reseted!");
 }
@@ -128,7 +128,7 @@ uint32_t packetCount = 0;
 byte ackCount=0;
 int CurrentRSSI = 0;
 
-uint8_t PowerLevel = 23;
+int8_t PowerLevel = 23;
 
 char IncomingMsg_char[230];
 int IncomingMsg_int[230];
@@ -165,7 +165,7 @@ int8_t Second_Y;
 
 
 
-uint8_t BITRATE_Counter = 6;
+int8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
 {	RF_BITRATELSB_1200	,	RF_BITRATEMSB_1200	}	,
 {	RF_BITRATELSB_2400	,	RF_BITRATEMSB_2400	}	,
@@ -359,31 +359,34 @@ if (input == 'i') // print all available setup infos
     if (input == 'y')
     {
       ReciveMsgFlag = !ReciveMsgFlag;
-      Serial.printf("ReciveMsgFlag: ",ReciveMsgFlag);
+      Serial.printf("ReciveMsgFlag: %d\n",ReciveMsgFlag);
     }
     if (input == 'x')
     {
       SendMsgFlag = !SendMsgFlag;
-      Serial.printf("SendMsgFlag: ",SendMsgFlag);
+      Serial.printf("SendMsgFlag: %d\n",SendMsgFlag);
     }  
     if (input == 'c')
     {
       PowerLevel++;
       if (PowerLevel>23) PowerLevel = 23;
       radio.setPowerLevel(PowerLevel);
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     }
     if (input == 'v')
     {
       PowerLevel--;
-      if (PowerLevel>23) PowerLevel = 23;
+      if (PowerLevel<0) PowerLevel = 0;
       radio.setPowerLevel(PowerLevel);
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     } 
     if (input == 'b')
     {
       BITRATE_Counter--;
-      if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
+      if (BITRATE_Counter<0) {BITRATE_Counter = 0;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
     }
     if (input == 'n')
     {
@@ -391,9 +394,12 @@ if (input == 'i') // print all available setup infos
       if (BITRATE_Counter>22) {BITRATE_Counter = 22;}
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
-    }   
-
-
+      Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
+    }  
+    if (input == 'p')
+    {
+      ResetRadio(); 
+    }
   }
 
 }
