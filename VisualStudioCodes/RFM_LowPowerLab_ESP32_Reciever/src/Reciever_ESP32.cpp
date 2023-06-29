@@ -39,6 +39,9 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 
 #include <Geiger.h>
+#include <esp_task_wdt.h>
+//3 seconds WDT
+#define WDT_TIMEOUT 3
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE ************
 //*********************************************************************************************
@@ -122,6 +125,7 @@ void ProcessSerialInput();
 void RFM_Recive_msg();
 void RFM_Send_msg();
 void ButtonHandler();
+void WatchDogFeeder();
 
 
 unsigned long previousMillis_DisplayUpdater = 0;
@@ -133,6 +137,9 @@ uint32_t packetCount_Prev;
 uint32_t packetCount = 0;
 byte ackCount=0;
 int CurrentRSSI = 0;
+
+unsigned long previousMillis_WatchDogTimer = 0;
+bool WatchDogEnable = true;
 
 int8_t PowerLevel = 23;
 
@@ -286,6 +293,9 @@ u8g2.begin();
 u8g2.enableUTF8Print();
 //u8g2.setDisplayRotation(U8G2_R2);
 
+esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+esp_task_wdt_add(NULL); //add current thread to WDT watch
+
 }
 
 
@@ -301,12 +311,32 @@ void loop() {
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
   Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
+  WatchDogFeeder();
 }
 
 
 void ProcessSerialInput(){
 
 //process any serial input
+//Used diagnostic characters:
+//1-9 Change Sending Period
+//R - read all register
+//E   Enyript ON
+//e   Enyript Off
+//i   Information 
+//t   read temp
+//y   toggle receiving frame
+//x   toggle sending frame
+//c   powerlevel--
+//v   powerlevel+
+//b   bitrate--
+//n   bitrate++
+//p   reset radio
+//k   BuzzerIntensity++
+//l   BuzzerIntensity--
+//h   BuzzerVolume++
+//j   BuzzerVolume--
+//g   Delay 5 sec (to test WDT)
   if (Serial.available() > 0)
   {
     char input = Serial.read();
@@ -841,4 +871,11 @@ void ButtonHandler(){
   Button_Yellow_state_Prev = Button_Yellow_state;
   Button_Green_state_Prev = Button_Green_state;
   Button_Red_state_Prev = Button_Red_state;
+}
+
+void WatchDogFeeder(){
+  if (millis() - previousMillis_WatchDogTimer >= 2000) {
+    previousMillis_WatchDogTimer = millis();
+    esp_task_wdt_reset();
+  }
 }
