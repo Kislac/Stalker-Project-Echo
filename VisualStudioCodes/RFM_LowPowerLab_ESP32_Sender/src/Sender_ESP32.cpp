@@ -36,6 +36,12 @@
 #include <Wire.h>
 #endif
 U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  
+
+
+#include <Geiger.h>
+#include <esp_task_wdt.h>
+//3 seconds WDT
+#define WDT_TIMEOUT 3
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE ************
 //*********************************************************************************************
@@ -78,6 +84,9 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 #define Button_Red 14
 
 
+#define buzzerPin 32
+#define LEDpin 33
+
 int TRANSMITPERIOD = 500; //transmit a packet to gateway so often (in ms)
 char payload[] = "123456789";
 char buff[20];
@@ -97,7 +106,7 @@ bool spy = false; //set to 'true' to sniff all packets on the same network
 void ResetRadio()
 {
   digitalWrite(RESET_PIN, HIGH);
-  delay(100);
+  delay(50);
   digitalWrite(RESET_PIN, LOW);
   Serial.println("Radio reseted!");
 }
@@ -116,6 +125,7 @@ void ProcessSerialInput();
 void RFM_Recive_msg();
 void RFM_Send_msg();
 void ButtonHandler();
+void WatchDogFeeder();
 
 
 unsigned long previousMillis_DisplayUpdater = 0;
@@ -127,6 +137,9 @@ uint32_t packetCount_Prev;
 uint32_t packetCount = 0;
 byte ackCount=0;
 int CurrentRSSI = 0;
+
+unsigned long previousMillis_WatchDogTimer = 0;
+bool WatchDogEnable = true;
 
 int8_t PowerLevel = 23;
 
@@ -163,7 +176,8 @@ int8_t First_Y;
 int8_t Second_Y;
 
 
-
+int8_t BuzzerIntensity= 0;
+uint8_t BuzzerVolume = 100;
 
 int8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
@@ -232,10 +246,9 @@ void setup() {
       pinMode(Button_Green, INPUT_PULLUP);
       pinMode(Button_Red, INPUT_PULLUP);
 
-//pinMode(Button_Blue, INPUT);
-//pinMode(Button_Yellow, INPUT);
-//pinMode(Button_Green, INPUT);
-//pinMode(Button_Red, INPUT);
+      pinMode(LEDpin, OUTPUT);
+      pinMode(buzzerPin, OUTPUT);
+
 
 
   Serial.begin(SERIAL_BAUD);
@@ -280,6 +293,9 @@ u8g2.begin();
 u8g2.enableUTF8Print();
 //u8g2.setDisplayRotation(U8G2_R2);
 
+esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+esp_task_wdt_add(NULL); //add current thread to WDT watch
+
 }
 
 
@@ -292,12 +308,36 @@ void loop() {
   if(SendMsgFlag == true){RFM_Send_msg();}
   ButtonHandler();
   //delay(1);
+
+  //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
+  Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
+  //esp_task_wdt_reset();
+  WatchDogFeeder();
 }
 
 
 void ProcessSerialInput(){
 
 //process any serial input
+//Used diagnostic characters:
+//1-9
+//R
+//E
+//e
+//i
+//t
+//y
+//x
+//c
+//v
+//b
+//n
+//p
+//k
+//l
+//h
+//j
+//g
   if (Serial.available() > 0)
   {
     char input = Serial.read();
@@ -366,7 +406,8 @@ if (input == 'i') // print all available setup infos
       SendMsgFlag = !SendMsgFlag;
       Serial.printf("SendMsgFlag: %d\n",SendMsgFlag);
     }  
-    if (input == 'c')
+  
+  if (input == 'c')
     {
       PowerLevel++;
       if (PowerLevel>23) PowerLevel = 23;
@@ -400,6 +441,36 @@ if (input == 'i') // print all available setup infos
     {
       ResetRadio(); 
     }
+    if (input == 'k')
+    {
+
+      BuzzerIntensity++; 
+      if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
+      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+    }
+    if (input == 'l')
+    {
+      BuzzerIntensity--;
+      if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
+      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+    }
+    //BuzzerVolume
+    if (input == 'h')
+    {
+      BuzzerVolume++; 
+      //if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
+      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+    }
+    if (input == 'j')
+    {
+      BuzzerVolume--;
+      //if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
+      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+    }
+    if (input == 'g')
+    {
+      delay(5000);
+    }
   }
 
 }
@@ -431,6 +502,10 @@ for(int i=RSSI_LogSize-1; i>0;i--){
   RSSI_Log[i]=RSSI_Log[i-1];
 }
 RSSI_Log[0] = CurrentRSSI;
+BuzzerIntensity = map(CurrentRSSI,-100,-40,0,100);
+if (BuzzerIntensity>99) {BuzzerIntensity = 100;}
+if (BuzzerIntensity<=0) {BuzzerIntensity = 0;}
+//Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
 
 //SerialPrint Diagram
     //for(int i=0; i<RSSI_LogSize;i++)
@@ -476,7 +551,7 @@ RSSI_Log[0] = CurrentRSSI;
 
     Serial.println();
     //Blink(LED_BUILTIN,3);
-    Blink(33,1);
+    Blink(LEDpin,1);
   }
 }
 
@@ -594,7 +669,7 @@ void DisplayUpdater(){
 
 
     u8g2.setCursor(0,39); 
-    u8g2.printf("-10dbi");
+    u8g2.printf("-30dbi");
     u8g2.setCursor(0,62); 
     u8g2.printf("-100dbi");
     u8g2.drawLine(25, 33, 25, 63);
@@ -636,8 +711,8 @@ for (int i = 0;i<VisualiseSection; i++){
   First_RSSI = RSSI_Log[VisualiseSection-i];
   Second_RSSI = RSSI_Log[VisualiseSection-1-i];
 
-  First_Y = map(First_RSSI,-100,-10,62,34);
-  Second_Y = map(Second_RSSI,-100,-10,62,34);
+  First_Y = map(First_RSSI,-100,-30,62,34);
+  Second_Y = map(Second_RSSI,-100,-30,62,34);
 
 //  Serial.printf("|i:%d F_X:%d F_Y:%d/%d S_X:%d S_Y:%d/%d| \n", i, First_X,First_RSSI,First_Y,Second_X,Second_RSSI,Second_Y);
   u8g2.drawLine(First_X, First_Y, Second_X, Second_Y);
@@ -799,4 +874,11 @@ void ButtonHandler(){
   Button_Yellow_state_Prev = Button_Yellow_state;
   Button_Green_state_Prev = Button_Green_state;
   Button_Red_state_Prev = Button_Red_state;
+}
+
+void WatchDogFeeder(){
+  if (millis() - previousMillis_WatchDogTimer >= 2000) {
+    previousMillis_WatchDogTimer = millis();
+    esp_task_wdt_reset();
+  }
 }
