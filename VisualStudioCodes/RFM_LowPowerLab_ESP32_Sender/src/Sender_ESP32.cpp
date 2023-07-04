@@ -311,7 +311,6 @@ void loop() {
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
   Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
-  //esp_task_wdt_reset();
   WatchDogFeeder();
 }
 
@@ -320,24 +319,24 @@ void ProcessSerialInput(){
 
 //process any serial input
 //Used diagnostic characters:
-//1-9
-//R
-//E
-//e
-//i
-//t
-//y
-//x
-//c
-//v
-//b
-//n
-//p
-//k
-//l
-//h
-//j
-//g
+//1-9 Change Sending Period
+//R - read all register
+//E   Enyript ON
+//e   Enyript Off
+//i   Information 
+//t   read temp
+//y   toggle receiving frame
+//x   toggle sending frame
+//c   powerlevel--
+//v   powerlevel+
+//b   bitrate--
+//n   bitrate++
+//p   reset radio
+//k   BuzzerIntensity++
+//l   BuzzerIntensity--
+//h   BuzzerVolume++
+//j   BuzzerVolume--
+//g   Delay 5 sec (to test WDT)
   if (Serial.available() > 0)
   {
     char input = Serial.read();
@@ -395,7 +394,7 @@ if (input == 'i') // print all available setup infos
       Serial.print("C, ");
       Serial.print(fTemp); //converting to F loses some resolution, obvious when C is on edge between 2 values (ie 26C=78F, 27C=80F)
       Serial.println('F');
-    }    
+    } 
     if (input == 'y')
     {
       ReciveMsgFlag = !ReciveMsgFlag;
@@ -436,7 +435,7 @@ if (input == 'i') // print all available setup infos
       radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
       radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
       Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
-    }  
+    }
     if (input == 'p')
     {
       ResetRadio(); 
@@ -467,10 +466,8 @@ if (input == 'i') // print all available setup infos
       //if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
       Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
     }
-    if (input == 'g')
-    {
-      delay(5000);
-    }
+    
+
   }
 
 }
