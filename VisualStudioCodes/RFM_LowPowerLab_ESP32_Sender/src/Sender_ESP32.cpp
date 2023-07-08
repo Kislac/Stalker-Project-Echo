@@ -178,6 +178,10 @@ int8_t Second_Y;
 
 int8_t BuzzerIntensity= 0;
 uint8_t BuzzerVolume = 100;
+uint8_t BuzzerPWM = 255;
+bool enableBuzzer= false;
+unsigned long previousMillis_Buzzer = 0;
+int delta = 2000;
 
 int8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
@@ -310,8 +314,38 @@ void loop() {
   //delay(1);
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
-  Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
+  //Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
   WatchDogFeeder();
+
+  if(enableBuzzer == true)
+  {
+    delta = millis() - previousMillis_Buzzer;
+        if (delta >= 0 && delta <150){
+          digitalWrite(buzzerPin,1);//delay(150);
+        }
+        else if (delta >= 150 && delta <330){
+          digitalWrite(buzzerPin,0);//delay(180);
+        }
+        else if(delta >= 330 && delta <390){
+          digitalWrite(buzzerPin,1);//delay(60);
+        }
+        else if (delta >= 390 && delta <990){
+          digitalWrite(buzzerPin,0);//delay(600);
+        }
+        else if(delta>1000){
+          previousMillis_Buzzer = millis();
+        }
+  }
+        
+        //digitalWrite(buzzerPin,0);
+        //delay(180);
+        //digitalWrite(buzzerPin,1);
+        //delay(60);
+        //digitalWrite(buzzerPin,0);
+        //delay(600);
+
+
+
 }
 
 
@@ -337,6 +371,10 @@ void ProcessSerialInput(){
 //h   BuzzerVolume++
 //j   BuzzerVolume--
 //g   Delay 5 sec (to test WDT)
+//z   BuzzerOn
+//u   BuzzerOff
+//.   BuzzerPWM--
+//-   BuzzerPWM++
   if (Serial.available() > 0)
   {
     char input = Serial.read();
@@ -466,7 +504,60 @@ if (input == 'i') // print all available setup infos
       //if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
       Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
     }
-    
+
+    if (input == 'z')
+    {
+      enableBuzzer = true;
+      //BuzzerPWM = 255;
+      //analogWrite(buzzerPin,BuzzerPWM);
+      //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+    }
+    if (input == 'u')
+    {
+      enableBuzzer = false;
+      //BuzzerPWM = 0;
+      //analogWrite(buzzerPin,BuzzerPWM);
+      //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+    }
+    if (input == '.')
+    {
+      BuzzerPWM--;
+      analogWrite(buzzerPin,BuzzerPWM);
+      Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+    }
+    if (input == '-')
+    {
+      BuzzerPWM++;
+      analogWrite(buzzerPin,BuzzerPWM);
+      Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+    }
+    if (input == 'q')
+    {
+      //BuzzerPWM++;
+        for(int i=0;i<6;i++){
+        //Serial.printf("Start Meloday");
+        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        //analogWrite(buzzerPin,140);
+        digitalWrite(buzzerPin,1);
+        delay(150);
+        
+        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        //analogWrite(buzzerPin,0);
+        digitalWrite(buzzerPin,0);
+        delay(180);
+
+        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        digitalWrite(buzzerPin,1);
+        //analogWrite(buzzerPin,200);
+        delay(60);
+        
+        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        digitalWrite(buzzerPin,0);
+        //analogWrite(buzzerPin,0);
+        delay(600);
+        
+      }
+    }
 
   }
 

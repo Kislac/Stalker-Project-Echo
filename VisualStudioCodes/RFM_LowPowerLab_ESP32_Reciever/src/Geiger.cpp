@@ -1,6 +1,6 @@
 #include <Geiger.h>
 
-void Ping(uint8_t Pin, uint8_t volume){
+void Ping(uint8_t Pin){
   /*
   Creates the single pulse for the iconic Geiger counter sound
   Inputs: The pin that is connected to the buzzer
@@ -19,13 +19,13 @@ void Ping(uint8_t Pin, uint8_t volume){
   */
   //Does stop the CPU but for some reason more loud...
   
-  //digitalWrite(Pin,1);
-  analogWrite(Pin,volume);
+  digitalWrite(Pin,1);
+  
   delay(1);
-  analogWrite(Pin,0);
+  digitalWrite(Pin,0);
   
 }
-void Geiger(uint8_t Pin,uint16_t Intensity, uint8_t volume){
+void Geiger(uint8_t Pin,uint16_t Intensity){
     /*
     Creates the geiger sound using the buzzer on Pin, with the given Intesity. The intesity could be given between 0-100. 
     */
@@ -53,7 +53,7 @@ void Geiger(uint8_t Pin,uint16_t Intensity, uint8_t volume){
       }
       if (NewTime - OldTime >= WaitTime) {
         OldTime = NewTime;
-        Ping(Pin, volume);
+        Ping(Pin);
         Flag = true;
       }
     }

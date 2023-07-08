@@ -38,12 +38,14 @@
 //U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  
 #include <Wire.h>
 
+#include <EEPROM.h>
+
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 Adafruit_MPU6050 mpu;
 
 #include <FastLED.h>
-#define NUM_LEDS 15
+#define NUM_LEDS 6
 #define DATA_PIN 33
 CRGB leds[NUM_LEDS];
 
@@ -137,7 +139,20 @@ void RFM_Send_msg();
 void ButtonHandler();
 void WatchDogFeeder();
 void CodingHandler();
+void BombPhaseHandler();
+void AccelerationHandler();
 
+
+uint8_t fadeAmount = 5; 
+uint8_t brightness = 5;
+uint8_t ColorChangeNum = 0;
+unsigned long previousMillis_LEDFadeTimer = 0;
+
+unsigned long previousMillis_UnstableTimer = 0;
+uint32_t UnstableTimer;
+
+unsigned long ResetBombTimer = 0;
+bool ResetBombTimerFlag =false;
 
 unsigned long previousMillis_CodingChange = 0;
 uint8_t CodeArray[10];
@@ -166,6 +181,11 @@ char SentMsg[64];
 char IncomingMsg[64];
 
 
+float AccelX_Prev;
+float AccelY_Prev;
+float AccelZ_Prev;
+bool LightMotionDetected;
+bool HardMotionDetected;
 
 
 bool Button_Blue_state = 1;
@@ -183,7 +203,7 @@ char ButtonInputsMeaning [4][3] = {"Ж","Ω","θ","Ѯ"};
 bool Unarmed=false;
 
 
-bool SendMsgFlag = false;
+bool SendMsgFlag = true;
 bool ReciveMsgFlag = false;
 
 
@@ -198,12 +218,16 @@ int8_t First_Y;
 int8_t Second_Y;
 
 
-int8_t BuzzerIntensity= 0;
+int8_t BuzzerIntensity= 80;
 uint8_t BuzzerVolume = 100;
 uint8_t BuzzerPWM = 255;
 bool enableBuzzer= false;
 unsigned long previousMillis_Buzzer = 0;
 int delta = 2000;
+
+bool enableGeiger = false;
+
+uint8_t BombPhase = 1;
 
 int8_t BITRATE_Counter = 6;
 uint8_t BITRATE[22][2] ={
@@ -264,6 +288,7 @@ int BITRATE_Meaning[22] =
 //void RFM_Send_msg();
 
 void setup() {
+  //delay(2000);
     for(int i = 0; i < RSSI_LogSize;  i++ )//clear IncomingMsg[] array
       RSSI_Log[i] = -100;
 
@@ -276,7 +301,9 @@ void setup() {
       pinMode(buzzerPin, OUTPUT);
 
 //setup FastLED
-FastLED.addLeds<WS2812B, DATA_PIN, RGB>(leds, NUM_LEDS);
+FastLED.addLeds<WS2812B, DATA_PIN, GRB>(leds, NUM_LEDS);
+
+
 
  //setupt motion detection
 // Try to initialize!
@@ -295,6 +322,12 @@ FastLED.addLeds<WS2812B, DATA_PIN, RGB>(leds, NUM_LEDS);
   mpu.setInterruptPinLatch(true);	// Keep it latched.  Will turn off when reinitialized.
   mpu.setInterruptPinPolarity(true);
   mpu.setMotionInterrupt(true);
+
+   sensors_event_t a, g, temp;
+   mpu.getEvent(&a, &g, &temp);
+   AccelX_Prev = a.acceleration.x;
+   AccelY_Prev = a.acceleration.y;
+   AccelZ_Prev = a.acceleration.z;
 
   Serial.begin(SERIAL_BAUD);
   ResetRadio();
@@ -341,6 +374,14 @@ radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after
 esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
 esp_task_wdt_add(NULL); //add current thread to WDT watch
 
+EEPROM.begin(255);  //Initialize EEPROM
+BombPhase		= EEPROM.read(0);
+Serial.printf("BombPhase: %d\n", BombPhase);
+if(BombPhase == 255){
+  BombPhase = 1;
+}
+Serial.printf("BombPhase: %d\n", BombPhase);
+
 }
 
 
@@ -356,71 +397,24 @@ void loop() {
   //delay(1);
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
-  //Geiger(buzzerPin,BuzzerIntensity, BuzzerVolume);
-  WatchDogFeeder();
+ // Geiger(buzzerPin,BuzzerIntensity);
+WatchDogFeeder();
+ BombPhaseHandler();
+ AccelerationHandler();
+
+if (enableGeiger== true)
+{
+  Geiger(buzzerPin,BuzzerIntensity);
+}
+
 
   if(enableBuzzer == true)
   {
-    delta = millis() - previousMillis_Buzzer;
-        if (delta >= 0 && delta <150){
-          digitalWrite(buzzerPin,1);//delay(150);
-          for(int i= 0; i<15;i++){
-            leds[i] = CRGB::Red;
-          }
-          FastLED.show();
-        }
-        else if (delta >= 150 && delta <330){
-          digitalWrite(buzzerPin,0);//delay(180);
-          for(int i= 0; i<15;i++){
-            leds[i] = CRGB::Green;
-          }
-          FastLED.show();
-        }
-        else if(delta >= 330 && delta <390){
-          digitalWrite(buzzerPin,1);//delay(60);
-          for(int i= 0; i<15;i++){
-            leds[i] = CRGB::Blue;
-          }
-          FastLED.show();
-        }
-        else if (delta >= 390 && delta <990){
-          digitalWrite(buzzerPin,0);//delay(600);
-          for(int i= 0; i<15;i++){
-            leds[i] = CRGB::Yellow;
-          }
-        FastLED.show();
-        }
-        else if(delta>1000){
-          previousMillis_Buzzer = millis();
-        }
+        
   }
         
 
-   sensors_event_t a, g, temp;
-  if(mpu.getMotionInterruptStatus()) {
-    /* Get new sensor events with the readings */
-    
-mpu.getEvent(&a, &g, &temp);
-/* Print out the values */
-Serial.print("AccelX:");
-Serial.print(a.acceleration.x);
-Serial.print(",");
-Serial.print("AccelY:");
-Serial.print(a.acceleration.y);
-Serial.print(",");
-Serial.print("AccelZ:");
-Serial.print(a.acceleration.z);
-Serial.print(", ");
-Serial.print("GyroX:");
-Serial.print(g.gyro.x);
-Serial.print(",");
-Serial.print("GyroY:");
-Serial.print(g.gyro.y);
-Serial.print(",");
-Serial.print("GyroZ:");
-Serial.print(g.gyro.z);
-Serial.println("");
-  }
+   
 
   
 
@@ -448,8 +442,8 @@ void ProcessSerialInput(){
 //p   reset radio
 //k   BuzzerIntensity++
 //l   BuzzerIntensity--
-//h   BuzzerVolume++
-//j   BuzzerVolume--
+//h   GeigerON
+//j   GeigerOff
 //g   Delay 5 sec (to test WDT)
 //z   BuzzerOn
 //u   BuzzerOff
@@ -574,15 +568,19 @@ if (input == 'i') // print all available setup infos
     //BuzzerVolume
     if (input == 'h')
     {
-      BuzzerVolume++; 
-      //if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
-      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+      enableGeiger = true;
+      Serial.printf("enableGeiger: %d\n",enableGeiger);
+      //BuzzerVolume++; 
+      ////if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
+      //Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
     }
     if (input == 'j')
     {
-      BuzzerVolume--;
-      //if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
-      Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+      enableGeiger = false;
+      Serial.printf("enableGeiger: %d\n",enableGeiger);
+      //BuzzerVolume--;
+      ////if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
+      //Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
     }
 
     if (input == 'z')
@@ -595,6 +593,7 @@ if (input == 'i') // print all available setup infos
     if (input == 'u')
     {
       enableBuzzer = false;
+      digitalWrite(buzzerPin,0);
       //BuzzerPWM = 0;
       //analogWrite(buzzerPin,BuzzerPWM);
       //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
@@ -638,6 +637,22 @@ if (input == 'i') // print all available setup infos
         
       }
     }
+    if(input == 'a'){
+        for(int i= 0; i<NUM_LEDS;i++)
+        {leds[i] = CRGB::Red;}
+        FastLED.show();  
+    }
+    if(input == 's'){
+        for(int i= 0; i<NUM_LEDS;i++)
+        {leds[i] = CRGB::Green;}
+        FastLED.show();  
+    }
+    if(input == 'd'){
+        for(int i= 0; i<NUM_LEDS;i++)
+        {leds[i] = CRGB::Blue;}
+        FastLED.show();  
+    }
+    
 
   }
 
@@ -884,6 +899,44 @@ void ButtonHandler(){
     Serial.printf("Unarmed!\n");
   }
 
+
+if(//start reseting to default values
+  Button_Blue_state == 0 &&
+  Button_Yellow_state == 0 &&
+  ResetBombTimerFlag == false
+){
+  ResetBombTimer = millis();
+  ResetBombTimerFlag = true;
+  Serial.printf("Reset Started!\n");
+}
+
+if(// iff button relesed cancel reseting
+  (Button_Blue_state == 1 ||
+  Button_Yellow_state == 1) &&
+  ResetBombTimerFlag == true
+){
+  ResetBombTimerFlag = false;
+  Serial.printf("Cancel reseting!\n");
+  }
+
+if(millis()-ResetBombTimer>5000 &&
+  Button_Blue_state == 0 &&
+  Button_Yellow_state == 0 &&
+  ResetBombTimerFlag == true
+){
+  BombPhase = 1;
+  EEPROM.write(0, 1);
+  EEPROM.commit();
+  Serial.printf("Reseting to default values now!\n");
+  ResetBombTimerFlag = false;
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+} 
+
   Button_Blue_state_Prev = Button_Blue_state;
   Button_Yellow_state_Prev = Button_Yellow_state;
   Button_Green_state_Prev = Button_Green_state;
@@ -930,6 +983,256 @@ void CodingHandler(){
   }
 
 
+}
+
+
+void BombPhaseHandler(){
+  
+
+  switch(BombPhase){
+    case 1:
+      Geiger(buzzerPin,80);
+      if (millis() - previousMillis_LEDFadeTimer >= 50) {
+        previousMillis_LEDFadeTimer = millis();
+        for(int i = 0; i < NUM_LEDS; i++ ){
+          switch (ColorChangeNum){
+            case 0:leds[i] = CRGB::Green;break;
+            case 1:leds[i] = CRGB::Blue;break;
+            case 2:leds[i] = CRGB::Red;break;
+            case 3:leds[i] = CRGB::Yellow;break;
+            case 4:leds[i] = CRGB::Purple;break;
+          }
+          leds[i].fadeLightBy(brightness);
+        }
+        FastLED.show();
+        brightness = brightness + fadeAmount;
+        // reverse the direction of the fading at the ends of the fade:
+        if(brightness == 0 || brightness == 255){
+          fadeAmount = -fadeAmount ;
+        }  
+        if (brightness == 255){
+          ColorChangeNum++;
+        }
+        if (ColorChangeNum>=2){
+          ColorChangeNum=0;
+        }
+        //Serial.printf("brightness: %d; ColorChangeNum:%d\n",brightness,ColorChangeNum );
+      }
+      if(LightMotionDetected == true){
+        Serial.printf("Motion Detected. Bomb is Armed. Ticking Started!\n" );
+        Serial.printf("----SWITCHING to Phase2----\n");
+        LightMotionDetected = false;
+        HardMotionDetected = false;
+        BombPhase = 2;
+        EEPROM.write(0, BombPhase);EEPROM.commit();
+      }
+
+      break;
+    case 2:
+      //delta = millis() - previousMillis_Buzzer;
+
+      for(int b=0;b<10;b++){
+        digitalWrite(buzzerPin,1);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Green;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,1);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);
+        esp_task_wdt_reset();   
+      }
+      BombPhase = 3;
+      EEPROM.write(0, BombPhase);EEPROM.commit();
+      Serial.printf("----SWITCHING to Phase3----\n");
+      
+
+      break;
+    case 3:
+        Geiger(buzzerPin,90);
+
+        if(LightMotionDetected == true){
+          Serial.printf("Motion Detected. Bomb is Armed. Ticking Started!\n" );
+          LightMotionDetected = false;
+          HardMotionDetected = false;
+          BombPhase = 2;
+          EEPROM.write(0, BombPhase);EEPROM.commit();
+          Serial.printf("----SWITCHING to Phase2----\n");
+        }
+        if(Unarmed == true){
+          BombPhase = 4;
+          EEPROM.write(0, BombPhase);EEPROM.commit();
+          Serial.printf("----SWITCHING to Phase4----\n");
+          for(int i=0;i<10;i++){
+            digitalWrite(buzzerPin,1);delay(100);
+            digitalWrite(buzzerPin,0);delay(100);
+          }
+        }
+
+
+
+        delta = millis() - previousMillis_Buzzer;
+        if (delta >= 0 && delta <150){
+          digitalWrite(buzzerPin,1);//delay(150);
+          for(int i= 0; i<NUM_LEDS;i++){
+            leds[i] = CRGB::Green;
+          }
+          FastLED.show();
+        }
+        else if (delta >= 150 && delta <330){
+          digitalWrite(buzzerPin,0);//delay(180);
+          for(int i= 0; i<NUM_LEDS;i++){
+            leds[i] = CRGB::Green;
+          }
+          FastLED.show();
+        }
+        else if(delta >= 330 && delta <390){
+          digitalWrite(buzzerPin,1);//delay(60);
+          for(int i= 0; i<NUM_LEDS;i++){
+            leds[i] = CRGB::Red;
+          }
+          FastLED.show();
+        }
+        else if (delta >= 390 && delta <990){
+          digitalWrite(buzzerPin,0);//delay(600);
+          for(int i= 0; i<NUM_LEDS;i++){
+            leds[i] = CRGB::Red;
+          }
+        FastLED.show();
+        }
+        else if(delta>1000){
+          previousMillis_Buzzer = millis();
+        }
+      break;
+
+    case 4:
+      Geiger(buzzerPin,70);
+      if (millis() - previousMillis_LEDFadeTimer >= 50) {
+        previousMillis_LEDFadeTimer = millis();
+        for(int i = 0; i < NUM_LEDS; i++ ){
+          //switch (ColorChangeNum){
+          //  case 0:leds[i] = CRGB::Green;break;
+          //  case 1:leds[i] = CRGB::Blue;break;
+          //  case 2:leds[i] = CRGB::Red;break;
+          //  case 3:leds[i] = CRGB::Yellow;break;
+          //  case 4:leds[i] = CRGB::Purple;break;
+          //}
+          leds[i] = CRGB::Yellow;
+          leds[i].fadeLightBy(brightness);
+        }
+        FastLED.show();
+        brightness = brightness + fadeAmount;
+        // reverse the direction of the fading at the ends of the fade:
+        if(brightness == 0 || brightness == 255){
+          fadeAmount = -fadeAmount ;
+        }  
+        //if (brightness == 255){
+        //  ColorChangeNum++;
+        //}
+        //if (ColorChangeNum==2){
+        //  ColorChangeNum=0;
+        //}
+
+        if(HardMotionDetected == true){
+        Serial.printf("Motion Detected. Bomb is Unstable. Stabilizing timer started!\n" );
+        LightMotionDetected = false;
+        HardMotionDetected = false;
+        BombPhase = 5;
+        EEPROM.write(0, BombPhase);EEPROM.commit();
+        Serial.printf("----SWITCHING to Phase5----\n");
+        }
+      }
+      break;
+    case 5:
+      
+      for(int b=0;b<10;b++){
+        digitalWrite(buzzerPin,1);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Green;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,1);
+        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);
+        esp_task_wdt_reset();  
+      }
+      BombPhase = 6;
+      EEPROM.write(0, BombPhase);EEPROM.commit();
+      Serial.printf("----SWITCHING to Phase6----\n");
+      previousMillis_UnstableTimer = millis();
+      UnstableTimer = 60*60*1000;//-->1 hour 
+      ColorChangeNum = 0;
+      break;
+    case 6:
+      Geiger(buzzerPin,95);
+      if (millis() - previousMillis_LEDFadeTimer >= 1000) {
+        previousMillis_LEDFadeTimer = millis();
+        for(int i = 0; i < NUM_LEDS; i++ ){
+          switch (ColorChangeNum){
+            
+            case 0:leds[i] = CRGB::Blue;break;
+            case 1:leds[i] = CRGB::Red;break;
+            
+            //case 2:leds[i] = CRGB::Green;break;
+          }
+          //leds[i].fadeLightBy(0);
+        }
+        FastLED.show();
+        ColorChangeNum++;
+        if (ColorChangeNum>=2){
+          ColorChangeNum=0;
+        }
+      }
+      if (millis() - previousMillis_UnstableTimer >= UnstableTimer){
+        BombPhase = 4;
+        EEPROM.write(0, BombPhase);EEPROM.commit();
+        Serial.printf("Timer expired. Bomb is Stable!\n" );
+        Serial.printf("----SWITCHING to Phase4----\n");
+      }
+      if(HardMotionDetected == true){
+        Serial.printf("Motion Detected. Bomb is Unstable. Stabilizing timer started!\n" );
+        Serial.printf("----SWITCHING to Phase5----\n");
+        LightMotionDetected = false;
+        HardMotionDetected = false;
+        EEPROM.write(0, BombPhase);EEPROM.commit();
+        BombPhase = 5;
+        }
+      //previousMillis_UnstableTimer
+
+      break;
+  
+  }
+
+}
+
+void AccelerationHandler(){
+sensors_event_t a, g, temp;
+
+  if(mpu.getMotionInterruptStatus()) {
+    /* Get new sensor events with the readings */
+    
+mpu.getEvent(&a, &g, &temp);
+
+float deltaX = abs(AccelX_Prev - a.acceleration.x);
+float deltaY = abs(AccelY_Prev - a.acceleration.y);
+float deltaZ = abs(AccelZ_Prev - a.acceleration.z);
+float MaxAcceleration = max(deltaX, deltaY);
+MaxAcceleration = max(MaxAcceleration, deltaZ);
+//Serial.printf("DeltaAcceleration: %f\n", MaxAcceleration);
+
+if(MaxAcceleration >= 4){
+  LightMotionDetected = true;
+  Serial.printf("LightMotionDetected: %f\n", MaxAcceleration);
+}
+if(MaxAcceleration >= 5){
+  HardMotionDetected = true;
+  Serial.printf("HardMotionDetected: %f\n", MaxAcceleration);
+}
+
+
+AccelX_Prev = a.acceleration.x;
+AccelY_Prev = a.acceleration.y;
+AccelZ_Prev = a.acceleration.z;
+
+  }
 }
 
 
