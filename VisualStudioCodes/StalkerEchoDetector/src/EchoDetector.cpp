@@ -199,8 +199,8 @@ uint8_t GATEWAYID  =   2 ;   // "central" node | Target ID
 #define buzzerPin 32
 #define LEDpin 33
 
-int TRANSMITPERIOD = 500; //transmit a packet to gateway so often (in ms)
-char payload[] = "ABCDEFGHIJK";
+int TRANSMITPERIOD = 1000; //transmit a packet to gateway so often (in ms)
+//char payload[] = "Turn on WiFi!";
 char buff[20];
 byte sendSize=1;
 boolean requestACK = false;
@@ -242,6 +242,10 @@ void BuzzerHandler();
 void LEDHandler();
 void ConnectToWifi(uint16_t timeout);
 
+uint16_t SENDERID = 0;
+uint16_t TARGETID=  0;
+
+
 bool Buzzer_ON = true;
 bool LED_ON = true;
 bool Display_ON = true;
@@ -273,6 +277,7 @@ bool DisplayMenu = false;
 uint8_t LEDIntensity=255;
 unsigned long previousMillis_LEDTimer=0;
 unsigned long previousMillis_LEDOffTimer=0;
+unsigned long previousMillis_LEDBuiltInOffTimer=0;
 int16_t LEDTimer=500;
 unsigned long MSGRecivedTime=0;
 
@@ -401,6 +406,7 @@ void setup() {
 
       pinMode(LEDpin, OUTPUT);
       pinMode(buzzerPin, OUTPUT);
+      pinMode(LED_BUILTIN, OUTPUT);
 
       analogWrite(LEDpin,0);
 
@@ -539,6 +545,12 @@ LED_ON          = EEPROM.read(8); Serial.printf("LED_ON          : %d\n", LED_ON
 LEDIntensity    = EEPROM.read(9); Serial.printf("LEDIntensity    : %d\n", LEDIntensity    );
 SignalDecoding  = EEPROM.read(10);Serial.printf("SignalDecoding  : %d\n", SignalDecoding  );
 
+radio.setAddress(NODEID);
+radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
+radio.writeReg(REG_BITRATELSB, BITRATE[BITRATE_Counter][0]);   // setup- function, after radio.initialize(...)
+radio.setPowerLevel(PowerLevel);
+radio.spyMode(spy);
+
 //In case of first Flash, when the EEPROM untouched, set the default values.
 //(*When the EEPROM untouched, than every value is 255)
 if(EEPROM.read(0)== 255){ReciveMsgFlag   = 1;  EEPROM.write(0, ReciveMsgFlag);}
@@ -615,7 +627,7 @@ void ProcessSerialInput(){
     if (input >= 48 && input <= 57) //[0,9]
     {
       TRANSMITPERIOD = 100 * (input-48);
-      if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 1000;
+      if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 5000;
       Serial.print("\nChanging delay to ");
       Serial.print(TRANSMITPERIOD);
       Serial.println("ms\n");
@@ -763,6 +775,8 @@ if (radio.receiveDone())
     Serial.print(']');
     Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
     if (spy) Serial.print("to [");Serial.print(radio.TARGETID, DEC);Serial.print("] ");
+    SENDERID = radio.SENDERID;
+    TARGETID = radio.TARGETID;
 
     for(int b = 0; b < sizeof(IncomingMsg_char);  ++b )//clear IncomingMsg[] array
         IncomingMsg_char[b] = (char)0;
@@ -775,7 +789,7 @@ if (radio.receiveDone())
     CurrentRSSI = radio.readRSSI();
     Serial.print("   [RX_RSSI:");Serial.print(CurrentRSSI);Serial.print("]");
     packetCount_Prev = packetCount; 
-
+    Serial.println();
 
 
 for(int i=RSSI_LogSize-1; i>0;i--){
@@ -808,10 +822,17 @@ RSSI_Log[0] = CurrentRSSI;
 //
 
 
-    Serial.println();
+    //
     //Blink(LED_BUILTIN,3);
     //Blink(LEDpin,1);
+    
   }
+    
+    //if (millis() - previousMillis_LEDTimer >= LEDTimer) {
+    //  previousMillis_LEDTimer = millis();
+    //  digitalWrite(LED_BUILTIN,1);
+    //}
+
 }
 
 void RFM_Send_msg(){
@@ -853,6 +874,9 @@ void RFM_Send_msg(){
     }
     else
     {
+      char payload[] = "Turn on WiFi!";
+      sendSize = 13;
+
       Serial.print("Sending[");
       Serial.print(sendSize);
       Serial.print("]: ");
@@ -862,21 +886,29 @@ void RFM_Send_msg(){
       }
         
       sentMSGCounter++;
-      sendSize++;
-      if(sendSize>5){
-        sendSize=1;
-      }
+      //sendSize++;
+      //if(sendSize>5){
+      //  sendSize=1;
+      //}
       radio.send(GATEWAYID, payload, sendSize);
+
+      //char payload[] = "ABCDEFGHIJK";
       //if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
       // Serial.print(" ok!");
       //else Serial.print(" nothing...");
     }
     //sendSize = (sendSize + 1) % 31;
     //sendSize = (sendSize + 1) % 4;
+
     Serial.println();
-    Blink(LED_BUILTIN,1);
+    //Blink(LED_BUILTIN,1);
     //Blink(33,3);
+    digitalWrite(LED_BUILTIN,1);
+    previousMillis_LEDBuiltInOffTimer = millis();
   }
+  if(millis() - previousMillis_LEDBuiltInOffTimer >= 10){
+      digitalWrite(LED_BUILTIN,0);
+    }
 }
 
 void DisplayUpdater(){
@@ -907,11 +939,13 @@ void DisplayUpdater(){
         if (ReciveMsgFlag == true){
         u8g2.setCursor(0,16); 
         if(SignalDecoding==true){
-          u8g2.printf("Got[%d]%s",packetCount, IncomingMsg_char);
+          uint16_t asd = radio.SENDERID;
+          uint16_t ads2 = radio.TARGETID;
+          u8g2.printf("Got[%d][%d][%d]%s",packetCount, SENDERID, TARGETID, IncomingMsg_char);
         }else{
           u8g2.printf("Got[%d]",packetCount);
         }
-        
+        //print(radio.SENDERID, DEC)
         }
         if (SendMsgFlag == true){
         u8g2.setFont(u8g2_font_5x8_tf); //Width - 4; Height - 6
