@@ -459,24 +459,16 @@ u8g2.begin(27,26,25,U8X8_PIN_NONE,U8X8_PIN_NONE,14);
 u8g2.enableUTF8Print();
 //u8g2.setDisplayRotation(U8G2_R2);
 
-u8g2.clearBuffer();
-  u8g2.drawXBM( 0, 0, ClearSky_Startup_width, ClearSky_Startup_height, ClearSky_Startup_bits);
-  u8g2.sendBuffer();
 
-  digitalWrite(buzzerPin, 1);delay(50);
-  digitalWrite(buzzerPin, 0);delay(50);
-  digitalWrite(buzzerPin, 1);delay(50);
-  digitalWrite(buzzerPin, 0);delay(50);
-  digitalWrite(buzzerPin, 0);delay(1000);
 
-esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
-esp_task_wdt_add(NULL); //add current thread to WDT watch
+
 
 ConnectToWifi(1000);
 
 //WiFi.mode(WIFI_STA);
 ArduinoOTA
     .onStart([]() {
+      esp_task_wdt_init(6000, true); //enable panic so ESP32 restarts
       String type;
       if (ArduinoOTA.getCommand() == U_FLASH)
         type = "sketch";
@@ -490,6 +482,7 @@ ArduinoOTA
       Serial.println("\nEnd");
     })
     .onProgress([](unsigned int progress, unsigned int total) {
+      //esp_task_wdt_reset();
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
         //Write OTA flashing to the screen
         u8g2.clearBuffer(); // clear the internal memory
@@ -526,8 +519,19 @@ ArduinoOTA
   ArduinoOTA.begin();
   WiFi.mode(WIFI_OFF);WifiStatus = false;
 
+  u8g2.clearBuffer();
+  u8g2.drawXBM( 0, 0, ClearSky_Startup_width, ClearSky_Startup_height, ClearSky_Startup_bits);
+  u8g2.sendBuffer();
+
+  digitalWrite(buzzerPin, 1);delay(50);
+  digitalWrite(buzzerPin, 0);delay(50);
+  digitalWrite(buzzerPin, 1);delay(50);
+  digitalWrite(buzzerPin, 0);delay(50);
+  digitalWrite(buzzerPin, 0);delay(1000);
 
 
+esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
+esp_task_wdt_add(NULL); //add current thread to WDT watch
 
 
 

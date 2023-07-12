@@ -40,6 +40,28 @@
 
 #include <EEPROM.h>
 
+//OTA
+//#include <Arduino.h>
+#include <WiFi.h>
+#include <ESPmDNS.h>
+#include <WiFiUdp.h>
+#include <ArduinoOTA.h>
+
+const char* ssid = "Xiaomi11T";
+const char* password = "11112222";
+//
+char WifiStatusReturn [7][100] = 
+	{
+		"0 : WL_IDLE_STATUS: Wi-Fi is in process of changing between statuses",
+		"1 : WL_NO_SSID_AVAIL: configured SSID cannot be reached",
+		"2 : WL_SCAN_COMPLETED",
+		"3 : WL_CONNECTED: successful connection is established",
+		"4 : WL_CONNECT_FAILED: if password is incorrect",
+		"5 : WL_CONNECTION_LOST:",
+		"6 : WL_DISCONNECTED: module is not configured in station mode"
+	};
+
+
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
 Adafruit_MPU6050 mpu;
@@ -141,6 +163,9 @@ void WatchDogFeeder();
 void CodingHandler();
 void BombPhaseHandler();
 void AccelerationHandler();
+void ConnectToWifi(uint16_t timeout);
+
+bool WifiStatus = false;
 
 
 uint8_t fadeAmount = 5; 
@@ -371,6 +396,38 @@ radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after
 //u8g2.enableUTF8Print();
 //u8g2.setDisplayRotation(U8G2_R2);
 
+ConnectToWifi(2000);
+ArduinoOTA
+    .onStart([]() {
+      esp_task_wdt_init(6000, true); //enable panic so ESP32 restarts
+      String type;
+      if (ArduinoOTA.getCommand() == U_FLASH)
+        type = "sketch";
+      else // U_SPIFFS
+        type = "filesystem";
+
+      // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
+      Serial.println("Start updating " + type);
+    })
+    .onEnd([]() {
+      Serial.println("\nEnd");
+    })
+    .onProgress([](unsigned int progress, unsigned int total) {
+      Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+    })
+    .onError([](ota_error_t error) {
+      Serial.printf("Error[%u]: ", error);
+      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+    });
+
+  ArduinoOTA.begin();
+  WiFi.mode(WIFI_OFF);WifiStatus = false;
+
+
 esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
 esp_task_wdt_add(NULL); //add current thread to WDT watch
 
@@ -398,9 +455,10 @@ void loop() {
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
  // Geiger(buzzerPin,BuzzerIntensity);
-WatchDogFeeder();
+ WatchDogFeeder();
  BombPhaseHandler();
  AccelerationHandler();
+ //ArduinoOTA.handle();
 
 if (enableGeiger== true)
 {
@@ -554,33 +612,25 @@ if (input == 'i') // print all available setup infos
     }
     if (input == 'k')
     {
-
-      BuzzerIntensity++; 
-      if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
-      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+      WiFi.mode(WIFI_STA);
+      WifiStatus = true;
+      Serial.printf("WiFi.mode(WIFI_STA);");
     }
     if (input == 'l')
     {
-      BuzzerIntensity--;
-      if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
-      Serial.printf("BuzzerIntensity: %d\n",BuzzerIntensity);
+      Serial.printf("Connection status: %s\n", WifiStatusReturn[WiFi.status()]);
     }
     //BuzzerVolume
     if (input == 'h')
     {
-      enableGeiger = true;
-      Serial.printf("enableGeiger: %d\n",enableGeiger);
-      //BuzzerVolume++; 
-      ////if (BuzzerIntensity>99) {BuzzerIntensity = 99;}
-      //Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+      //WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      WifiStatus = false;
+      Serial.printf("WiFi.mode(WIFI_OFF);");
     }
     if (input == 'j')
     {
-      enableGeiger = false;
-      Serial.printf("enableGeiger: %d\n",enableGeiger);
-      //BuzzerVolume--;
-      ////if (BuzzerIntensity<0) {BuzzerIntensity = 0;}
-      //Serial.printf("BuzzerVolume: %d\n",BuzzerVolume);
+      ConnectToWifi(5000);
     }
 
     if (input == 'z')
@@ -1236,3 +1286,20 @@ AccelZ_Prev = a.acceleration.z;
 }
 
 
+void ConnectToWifi(uint16_t timeout){
+    WiFi.mode(WIFI_STA);
+    WifiStatus = true;
+    WiFi.begin(ssid, password);
+    uint8_t WifiTimeoutCounter = 0;
+    uint32_t start = millis();
+    while (WiFi.status() != WL_CONNECTED && millis()-start < timeout){}
+//
+    if(millis()-start <= timeout){
+      Serial.printf("Successfully connected to the Wifi! Connection time: %dms\n", millis()-start);
+      //Serial.printf("Local IP address: %s\n", WiFi.localIP());
+      Serial.print("Local IP address: "); Serial.println(WiFi.localIP());
+      
+    }else{
+      Serial.println("Timeout! Couldn't connect!"); 
+    }
+}
