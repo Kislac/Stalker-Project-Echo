@@ -68,7 +68,7 @@ Adafruit_MPU6050 mpu;
 
 #include <FastLED.h>
 #define NUM_LEDS 12
-uint8_t NUM_LEDS_Glow = 2;
+uint8_t NUM_LEDS_Glow = 1;
 #define DATA_PIN 33
 CRGB leds[NUM_LEDS];
 
