@@ -29,12 +29,12 @@
 //#include <SPIFlash.h>      //get it here: https://www.github.com/lowpowerlab/spiflash
 #include <RFM69registers.h> // Include- block, needed for recognition of REG_BITRATEMSB / REG_BITRATELSB
 #include <Arduino.h>
-#include <U8g2lib.h>
-#include <U8x8lib.h>
-#ifdef U8X8_HAVE_HW_I2C
-#include <Wire.h>
-#endif
-U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  
+//#include <U8g2lib.h>
+//#include <U8x8lib.h>
+//#ifdef U8X8_HAVE_HW_I2C
+//#include <Wire.h>
+//#endif
+//U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);  
 //*********************************************************************************************
 //************ IMPORTANT SETTINGS - YOU MUST CHANGE/CONFIGURE TO FIT YOUR HARDWARE ************
 //*********************************************************************************************
@@ -42,7 +42,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 // Address 0 is special (broadcast), messages to address 0 are received by all *listening* nodes (ie. active RX mode)
 // Gateway ID should be kept at ID=1 for simplicity, although this is not a hard constraint
 //*********************************************************************************************
-#define NODEID        2    // keep UNIQUE for each node on same network
+#define NODEID        5    // keep UNIQUE for each node on same network
 #define NETWORKID     100  // keep IDENTICAL on all nodes that talk to each other
 #define GATEWAYID     1    // "central" node
 
@@ -58,7 +58,7 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 //#define FREQUENCY   RF69_868MHZ
 //#define FREQUENCY     RF69_915MHZ
 //#define FREQUENCY_EXACT 916000000 // you may define an exact frequency/channel in Hz
-#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
+//#define ENCRYPTKEY    "sampleEncryptKey" //exactly the same 16 characters/bytes on all nodes!
 #define IS_RFM69HW_HCW  //uncomment only for RFM69HW/HCW! Leave out if you have RFM69W/CW!
 //*********************************************************************************************
 //Auto Transmission Control - dials down transmit power to save battery
@@ -66,14 +66,14 @@ U8G2_SH1106_128X64_NONAME_F_HW_I2C u8g2(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 //By reducing TX power even a little you save a significant amount of battery power
 //This setting enables this gateway to work with remote nodes that have ATC enabled to
 //dial their power down to only the required level (ATC_RSSI)
-#define ENABLE_ATC    //comment out this line to disable AUTO TRANSMISSION CONTROL
+//#define ENABLE_ATC    //comment out this line to disable AUTO TRANSMISSION CONTROL
 #define ATC_RSSI      -80
 //*********************************************************************************************
 #define SERIAL_BAUD   115200
 #define RESET_PIN PB11
 
 
-int TRANSMITPERIOD = 200; //transmit a packet to gateway so often (in ms)
+int TRANSMITPERIOD = 500; //transmit a packet to gateway so often (in ms)
 char payload[] = "123 ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 char buff[20];
 byte sendSize=0;
@@ -122,19 +122,24 @@ void ProcessSerialInput();
 void RFM_Recive_msg();
 void RFM_Send_msg();
 
-void setup() {
-  Serial.begin(SERIAL_BAUD);
-  radio.initialize(FREQUENCY,NODEID,NETWORKID);
 
-//radio.writeReg(REG_BITRATEMSB, RF_BITRATEMSB_25000); // setup- function, after radio.initialize(...)
-//radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after radio.initialize(...)
+void setup() {
+  pinMode(LED_BUILTIN, OUTPUT);
+  digitalWrite(LED_BUILTIN,0);
+  Serial.begin(SERIAL_BAUD);
+  ResetRadio();
+  radio.initialize(FREQUENCY,NODEID,NETWORKID);
+  
+
+radio.writeReg(REG_BITRATEMSB, RF_BITRATEMSB_25000); // setup- function, after radio.initialize(...)
+radio.writeReg(REG_BITRATELSB, RF_BITRATELSB_25000);   // setup- function, after radio.initialize(...)
 
 
 
 #ifdef IS_RFM69HW_HCW
   radio.setHighPower(); //must include this only for RFM69HW/HCW!
 #endif
-
+radio.encrypt(NULL);
 #ifdef ENCRYPTKEY
   radio.encrypt(ENCRYPTKEY);
 #endif
@@ -151,8 +156,8 @@ void setup() {
   radio.enableAutoPower(ATC_RSSI);
 #endif
 
-u8g2.begin();  
-u8g2.enableUTF8Print();
+//u8g2.begin();  
+//u8g2.enableUTF8Print();
   //u8g2.setDisplayRotation(U8G2_R2);
 
   char buff[50];
@@ -175,10 +180,10 @@ long lastPeriod = 0;
 
 void loop() {
   
-  DisplayUpdater();
+  //DisplayUpdater();
   ProcessSerialInput();  
   RFM_Send_msg();
-  radio.setPowerLevel(30);
+  //radio.setPowerLevel(30);
 }
 
 void ProcessSerialInput(){
@@ -211,21 +216,21 @@ void ProcessSerialInput(){
 
 void RFM_Send_msg(){
   //check for any received packets
-  if (radio.receiveDone())
-  {
-    Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
-    for (byte i = 0; i < radio.DATALEN; i++)
-      Serial.print((char)radio.DATA[i]);
-    Serial.print("   [RX_RSSI:");Serial.print(radio.RSSI);Serial.print("]");
-
-    if (radio.ACKRequested())
-    {
-      radio.sendACK();
-      Serial.print(" - ACK sent");
-    }
-    Blink(LED_BUILTIN,3);
-    Serial.println();
-  }
+  //if (radio.receiveDone())
+  //{
+  //  Serial.print('[');Serial.print(radio.SENDERID, DEC);Serial.print("] ");
+  //  for (byte i = 0; i < radio.DATALEN; i++)
+  //    Serial.print((char)radio.DATA[i]);
+  //  Serial.print("   [RX_RSSI:");Serial.print(radio.RSSI);Serial.print("]");
+//
+  //  if (radio.ACKRequested())
+  //  {
+  //    radio.sendACK();
+  //    Serial.print(" - ACK sent");
+  //  }
+  //  Blink(LED_BUILTIN,3);
+  //  Serial.println();
+  //}
 
   int currPeriod = millis()/TRANSMITPERIOD;
   if (currPeriod != lastPeriod)
@@ -238,10 +243,10 @@ void RFM_Send_msg(){
     //send FLASH id
     if(sendSize==0)
     {
-      byte buffLen=strlen(buff);
-      if (radio.sendWithRetry(GATEWAYID, buff, buffLen))
-        Serial.print(" ok!");
-      else Serial.print(" nothing...");
+      //byte buffLen=strlen(buff);
+      //if (radio.sendWithRetry(GATEWAYID, buff, buffLen))
+      //  Serial.print(" ok!");
+      //else Serial.print(" nothing...");
       //sendSize = (sendSize + 1) % 31;
     }
     else
@@ -253,9 +258,10 @@ void RFM_Send_msg(){
         Serial.print((char)payload[i]);
         SentMsg[i] = (char)payload[i];
       }
-      if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
-       Serial.print(" ok!");
-      else Serial.print(" nothing...");
+      radio.send(GATEWAYID, payload, sendSize);
+      //if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
+      // Serial.print(" ok!");
+      //else Serial.print(" nothing...");
     }
     sendSize = (sendSize + 1) % 31;
     Serial.println();
@@ -263,125 +269,125 @@ void RFM_Send_msg(){
   }
 }
 
-void DisplayUpdater(){
-  if (millis() - previousMillis_DisplayUpdater >= 100) {
-      previousMillis_DisplayUpdater = millis();
-    Serial.print("QQQ");
-    //if(sentMSGCounter_Prev != sentMSGCounter || packetCount_Prev != packetCount){
-
-    u8g2.clearBuffer(); // clear the internal memory
-      AliveAnimation();
-
-    //if (RFM_Recive_msg_DispFlag == true){
-        u8g2.setFont(u8g2_font_5x8_tf); //Width - 4; Height - 6
-        u8g2.setCursor(0,7); 
-        u8g2.print("RSSI: ");u8g2.print(CurrentRSSI);
-        u8g2.setCursor(0,14); 
-        u8g2.print("Got:[");u8g2.print(packetCount);u8g2.print(']');u8g2.print(IncomingMsg_char);
-        packetCount_Prev = packetCount; 
-    //  }
-    //if (RFM_Send_msg_DispFlag == true){
-        u8g2.setFont(u8g2_font_5x8_tf); //Width - 4; Height - 6
-        u8g2.setCursor(0,21); 
-        u8g2.printf("Sent[%d]: %s",sentMSGCounter,SentMsg);//u8g2.print(SentMsg); 
-        sentMSGCounter_Prev = sentMSGCounter;
-
-      //}
-
-
-      u8g2.sendBuffer();          // transfer internal memory to the display
-    //}
-
-  }
-}
-
-void AliveAnimation(){
-
-
-  if (millis() - previousMillis_LoadingIcon >= 300) {
-    // save the last time you blinked the LED
-    previousMillis_LoadingIcon = millis();
-    IconState++;
-    if(IconState == 8){
-      IconState = 0;
-    }
-  }
-
-  u8g2.setDrawColor(1);
-
-  switch (IconState){
-    case 0:
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-
-    case 1:
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-    case 2:
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-    case 3:
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      u8g2.setDrawColor(0);
-      break;
-
-
-
-    case 4:
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-    case 5:
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-    case 6:
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.setDrawColor(1);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      break;
-    case 7:
-      u8g2.setDrawColor(0);
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
-      
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
-      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
-      u8g2.setDrawColor(1);
-      break;
-        
-    }
-    
-  u8g2.setDrawColor(1);
-}
+//void DisplayUpdater(){
+//  if (millis() - previousMillis_DisplayUpdater >= 100) {
+//      previousMillis_DisplayUpdater = millis();
+//    Serial.print("QQQ");
+//    //if(sentMSGCounter_Prev != sentMSGCounter || packetCount_Prev != packetCount){
+//
+//    u8g2.clearBuffer(); // clear the internal memory
+//      AliveAnimation();
+//
+//    //if (RFM_Recive_msg_DispFlag == true){
+//        u8g2.setFont(u8g2_font_5x8_tf); //Width - 4; Height - 6
+//        u8g2.setCursor(0,7); 
+//        u8g2.print("RSSI: ");u8g2.print(CurrentRSSI);
+//        u8g2.setCursor(0,14); 
+//        u8g2.print("Got:[");u8g2.print(packetCount);u8g2.print(']');u8g2.print(IncomingMsg_char);
+//        packetCount_Prev = packetCount; 
+//    //  }
+//    //if (RFM_Send_msg_DispFlag == true){
+//        u8g2.setFont(u8g2_font_5x8_tf); //Width - 4; Height - 6
+//        u8g2.setCursor(0,21); 
+//        u8g2.printf("Sent[%d]: %s",sentMSGCounter,SentMsg);//u8g2.print(SentMsg); 
+//        sentMSGCounter_Prev = sentMSGCounter;
+//
+//      //}
+//
+//
+//      u8g2.sendBuffer();          // transfer internal memory to the display
+//    //}
+//
+//  }
+//}
+//
+//void AliveAnimation(){
+//
+//
+//  if (millis() - previousMillis_LoadingIcon >= 300) {
+//    // save the last time you blinked the LED
+//    previousMillis_LoadingIcon = millis();
+//    IconState++;
+//    if(IconState == 8){
+//      IconState = 0;
+//    }
+//  }
+//
+//  u8g2.setDrawColor(1);
+//
+//  switch (IconState){
+//    case 0:
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//
+//    case 1:
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//    case 2:
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//    case 3:
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      u8g2.setDrawColor(0);
+//      break;
+//
+//
+//
+//    case 4:
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//    case 5:
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//    case 6:
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.setDrawColor(1);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      break;
+//    case 7:
+//      u8g2.setDrawColor(0);
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_RIGHT );
+//      
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_UPPER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_LEFT );
+//      u8g2.drawCircle(123, 4, 4,U8G2_DRAW_LOWER_RIGHT );
+//      u8g2.setDrawColor(1);
+//      break;
+//        
+//    }
+//    
+//  u8g2.setDrawColor(1);
+//}
