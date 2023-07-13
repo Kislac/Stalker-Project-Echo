@@ -199,8 +199,8 @@ uint8_t GATEWAYID  =   2 ;   // "central" node | Target ID
 #define buzzerPin 32
 #define LEDpin 33
 
-int TRANSMITPERIOD = 1000; //transmit a packet to gateway so often (in ms)
-//char payload[] = "Turn on WiFi!";
+uint16_t TRANSMITPERIOD = 500/100; //transmit a packet to gateway so often (in ms)
+char payload[] = "ABCDEFG";
 char buff[20];
 byte sendSize=1;
 boolean requestACK = false;
@@ -241,6 +241,9 @@ void WatchDogFeeder();
 void BuzzerHandler();
 void LEDHandler();
 void ConnectToWifi(uint16_t timeout);
+void EnterToMenu();
+
+int BombPhase = 1;
 
 uint16_t SENDERID = 0;
 uint16_t TARGETID=  0;
@@ -255,6 +258,8 @@ bool OverwriteBuzzer = false;
 bool OverwriteLED = false;
 
 bool WifiStatus = false;
+uint8_t DisplayUpdateRate = 1; //*100
+uint8_t AliveAnimationRate = 1; //*100
 
 const char *string_list = 
   "RF settings\n"
@@ -264,6 +269,8 @@ const char *string_list =
   "Buzzer/LED Test\n"
   "ClearSky Logo\n"
   "Wifi Settings\n"
+  "Send RF Command\n"
+  "Screen Settings\n"
   "Reset Settings";
 
 uint8_t Display_selection = 0;
@@ -537,17 +544,22 @@ esp_task_wdt_add(NULL); //add current thread to WDT watch
 
 EEPROM.begin(255);  //Initialize EEPROM
   //ReadEEprom Values:
-ReciveMsgFlag   = EEPROM.read(0); Serial.printf("ReciveMsgFlag   : %d\n", ReciveMsgFlag   );
-SendMsgFlag     = EEPROM.read(1); Serial.printf("SendMsgFlag     : %d\n", SendMsgFlag     );
-BITRATE_Counter = EEPROM.read(2); Serial.printf("BITRATE_Counter : %d\n", BITRATE_Counter );
-PowerLevel      = EEPROM.read(3); Serial.printf("PowerLevel      : %d\n", PowerLevel      );
-NODEID          = EEPROM.read(4); Serial.printf("NODEID          : %d\n", NODEID          );
-GATEWAYID       = EEPROM.read(5); Serial.printf("GATEWAYID       : %d\n", GATEWAYID       );
-spy             = EEPROM.read(6); Serial.printf("spy             : %d\n", spy             );
-Buzzer_ON       = EEPROM.read(7); Serial.printf("Buzzer_ON       : %d\n", Buzzer_ON       );
-LED_ON          = EEPROM.read(8); Serial.printf("LED_ON          : %d\n", LED_ON          );
-LEDIntensity    = EEPROM.read(9); Serial.printf("LEDIntensity    : %d\n", LEDIntensity    );
-SignalDecoding  = EEPROM.read(10);Serial.printf("SignalDecoding  : %d\n", SignalDecoding  );
+ReciveMsgFlag      = EEPROM.read(0); Serial.printf("ReciveMsgFlag     :%d\n", ReciveMsgFlag   );
+SendMsgFlag        = EEPROM.read(1); Serial.printf("SendMsgFlag       :%d\n", SendMsgFlag     );
+BITRATE_Counter    = EEPROM.read(2); Serial.printf("BITRATE_Counter   :%d\n", BITRATE_Counter );
+PowerLevel         = EEPROM.read(3); Serial.printf("PowerLevel        :%d\n", PowerLevel      );
+NODEID             = EEPROM.read(4); Serial.printf("NODEID            :%d\n", NODEID          );
+GATEWAYID          = EEPROM.read(5); Serial.printf("GATEWAYID         :%d\n", GATEWAYID       );
+spy                = EEPROM.read(6); Serial.printf("spy               :%d\n", spy             );
+Buzzer_ON          = EEPROM.read(7); Serial.printf("Buzzer_ON         :%d\n", Buzzer_ON       );
+LED_ON             = EEPROM.read(8); Serial.printf("LED_ON            :%d\n", LED_ON          );
+LEDIntensity       = EEPROM.read(9); Serial.printf("LEDIntensity      :%d\n", LEDIntensity    );
+SignalDecoding     = EEPROM.read(10);Serial.printf("SignalDecoding    :%d\n", SignalDecoding  );
+TRANSMITPERIOD     = (EEPROM.read(11) << 8) + EEPROM.read(12); //reconstruct the integer
+                     Serial.printf("TRANSMITPERIOD    :%d\n", TRANSMITPERIOD  );
+DisplayUpdateRate  = EEPROM.read(13);Serial.printf("DisplayUpdateRate: %d\n", DisplayUpdateRate  );
+AliveAnimationRate = EEPROM.read(14);Serial.printf("AliveAnimationRate:%d\n", AliveAnimationRate  );
+
 
 radio.setAddress(NODEID);
 radio.writeReg(REG_BITRATEMSB, BITRATE[BITRATE_Counter][1]); // setup- function, after radio.initialize(...)
@@ -568,6 +580,13 @@ if(EEPROM.read(7)== 255){Buzzer_ON       = 1;  EEPROM.write(7, Buzzer_ON);}
 if(EEPROM.read(8)== 255){LED_ON          = 1;  EEPROM.write(8, LED_ON);}
 if(EEPROM.read(9)== 255){LEDIntensity    = 255;EEPROM.write(9, LEDIntensity);}
 if(EEPROM.read(10)== 255){SignalDecoding  = 1;  EEPROM.write(10,SignalDecoding);}
+if(EEPROM.read(11)== 255 && EEPROM.read(12)== 255)
+{ TRANSMITPERIOD = 500/100;
+  EEPROM.write(11, highByte(TRANSMITPERIOD));			//[2 byte][1-65536]ms
+  EEPROM.write(12, lowByte(TRANSMITPERIOD)); 			//[2 byte][1-65536]ms} //reconstruct the integer
+}
+if(EEPROM.read(13)== 255){DisplayUpdateRate  = 1;  EEPROM.write(13,DisplayUpdateRate);}
+if(EEPROM.read(14)== 255){AliveAnimationRate  = 1;  EEPROM.write(14,AliveAnimationRate);}
 
 if(
 ReciveMsgFlag  == 255 ||
@@ -580,7 +599,11 @@ spy            == 255 ||
 Buzzer_ON      == 255 ||
 LED_ON         == 255 ||
 //LEDIntensity   == 255 ||
-SignalDecoding == 255){
+SignalDecoding == 255 ||
+TRANSMITPERIOD == 65535 ||
+DisplayUpdateRate == 255 ||
+AliveAnimationRate == 255 
+){
   EEPROM.commit();
 }
 
@@ -630,10 +653,10 @@ void ProcessSerialInput(){
     char input = Serial.read();
     if (input >= 48 && input <= 57) //[0,9]
     {
-      TRANSMITPERIOD = 100 * (input-48);
-      if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 5000;
+      TRANSMITPERIOD = 100 * (input-48)/100;
+      if (TRANSMITPERIOD == 0) TRANSMITPERIOD = 5000/100;
       Serial.print("\nChanging delay to ");
-      Serial.print(TRANSMITPERIOD);
+      Serial.print(TRANSMITPERIOD*100);
       Serial.println("ms\n");
     }
 
@@ -858,7 +881,7 @@ void RFM_Send_msg(){
     Serial.println(33);
   }*/
 
-  int currPeriod = millis()/TRANSMITPERIOD;
+  int currPeriod = millis()/(TRANSMITPERIOD*100);
   if (currPeriod != lastPeriod)
   {
     lastPeriod=currPeriod;
@@ -878,8 +901,8 @@ void RFM_Send_msg(){
     }
     else
     {
-      char payload[] = "Turn on WiFi!";
-      sendSize = 13;
+      //char payload[] = "Turn on WiFi!";
+      //sendSize = 13;
 
       Serial.print("Sending[");
       Serial.print(sendSize);
@@ -890,10 +913,10 @@ void RFM_Send_msg(){
       }
         
       sentMSGCounter++;
-      //sendSize++;
-      //if(sendSize>5){
-      //  sendSize=1;
-      //}
+      sendSize++;
+      if(sendSize>7){
+        sendSize=1;
+      }
       radio.send(GATEWAYID, payload, sendSize);
 
       //char payload[] = "ABCDEFGHIJK";
@@ -921,7 +944,7 @@ void DisplayUpdater(){
     u8g2.setPowerSave(1);
   }else{
     u8g2.setPowerSave(0);
-    if (millis() - previousMillis_DisplayUpdater >= 100) {
+    if (millis() - previousMillis_DisplayUpdater >= DisplayUpdateRate*100) {
       previousMillis_DisplayUpdater = millis();
 
       u8g2.clearBuffer(); // clear the internal memory
@@ -933,7 +956,9 @@ void DisplayUpdater(){
       //5 - "Buzzer/LED Test\n"
       //6 - "ClearSky Logo\n";
       //7 - "Wifi Settings\n"
-      //8 - "Reset Settings\n";
+      //8 - "SendRFCommand\n"
+      //9 - "Screen Settings\n"
+      //10 - "Reset Settings\n";
       switch(Display_selection){
         case 0://Main Display
 
@@ -945,9 +970,9 @@ void DisplayUpdater(){
         if(SignalDecoding==true){
           uint16_t asd = radio.SENDERID;
           uint16_t ads2 = radio.TARGETID;
-          u8g2.printf("Got[%d][%d][%d]%s",packetCount, SENDERID, TARGETID, IncomingMsg_char);
+          u8g2.printf("[%d]%d-%d:%s",packetCount, SENDERID, TARGETID, IncomingMsg_char);
         }else{
-          u8g2.printf("Got[%d]",packetCount);
+          u8g2.printf("Signal Received[%d]",packetCount);
         }
         //print(radio.SENDERID, DEC)
         }
@@ -999,33 +1024,37 @@ void DisplayUpdater(){
 
         case 1://RF settings
           u8g2.setFont(u8g2_font_helvR08_tr);
-          u8g2.drawButtonUTF8(63, 10, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "RF settings" );
+          u8g2.drawButtonUTF8(63, 8, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "RF settings" );
 
 
           u8g2.setFontMode(1);  /* activate transparent font mode */
           u8g2.setDrawColor(1); /* color 1 for the box */
-          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 20, 63, 8);u8g2.setDrawColor(2);}
-          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 20, 63, 8);u8g2.setDrawColor(2);}
-          u8g2.setCursor(0,28);u8g2.printf("Recive RF:");
-          u8g2.setCursor(63,28);u8g2.printf("%s",ReciveMsgFlag?"true":"false");
-          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 30, 63, 8);u8g2.setDrawColor(2);}
-          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 30, 63, 8);u8g2.setDrawColor(2);}
-          u8g2.setCursor(0,38);u8g2.printf("Send RF:");
-          u8g2.setCursor(63,38);u8g2.printf("%s",SendMsgFlag?"true":"false");
-          if(Display_SettingsSelection==2 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 40, 63, 8);u8g2.setDrawColor(2);}
-          if(Display_SettingsSelection==2 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 40, 63, 8);u8g2.setDrawColor(2);}
-          u8g2.setCursor(0,48);u8g2.printf("BitRate:");
-          u8g2.setCursor(63,48);u8g2.printf("%d",BITRATE_Meaning[BITRATE_Counter]);
-          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 50, 63, 8);u8g2.setDrawColor(2);}
-          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 50, 63, 8);u8g2.setDrawColor(2);}
-          u8g2.setCursor(0,58);u8g2.printf("PowerLvl:");
-          u8g2.setCursor(63,58);u8g2.printf("%d",PowerLevel);
+          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 10, 63, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 10, 63, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,18);u8g2.printf("Recive RF:");
+          u8g2.setCursor(63,18);u8g2.printf("%s",ReciveMsgFlag?"true":"false");
+          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 20, 63, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 20, 63, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,28);u8g2.printf("Send RF:");
+          u8g2.setCursor(63,28);u8g2.printf("%s",SendMsgFlag?"true":"false");
+          if(Display_SettingsSelection==2 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 30, 63, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==2 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 30, 63, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,38);u8g2.printf("BitRate:");
+          u8g2.setCursor(63,38);u8g2.printf("%d",BITRATE_Meaning[BITRATE_Counter]);
+          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 40, 63, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 40, 63, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,48);u8g2.printf("PowerLvl:");
+          u8g2.setCursor(63,48);u8g2.printf("%d",PowerLevel);
+          if(Display_SettingsSelection==4 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 50, 63, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==4 && Display_SubSettingsSelection == 1){u8g2.drawBox(63, 50, 63, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,58);u8g2.printf("SendPeriod:");
+          u8g2.setCursor(63,58);u8g2.printf("%dms",TRANSMITPERIOD*100);
           
 
           
           if(Button_Blue_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection--;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
           if(Button_Yellow_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection++;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
-          if(Display_SettingsSelection<0 || Display_SettingsSelection >= 4){Display_SettingsSelection=0;}
+          if(Display_SettingsSelection<0 || Display_SettingsSelection >= 5){Display_SettingsSelection=0;}
 
           if(Button_Green_state == 0){Display_SubSettingsSelection = !Display_SubSettingsSelection;}
 
@@ -1072,14 +1101,31 @@ void DisplayUpdater(){
               Serial.printf("PL: %d BR: %d\n",radio.getPowerLevel(), BITRATE_Meaning[BITRATE_Counter]);
             }          
           }
+          if(Display_SettingsSelection == 4 && Display_SubSettingsSelection==1){
+            if(Button_Blue_state==0){
+              TRANSMITPERIOD++;
+              if (TRANSMITPERIOD>65500) {TRANSMITPERIOD = 65500;}
+              Serial.printf("TRANSMITPERIOD: %d\n", TRANSMITPERIOD);
+              EEPROM.write(11, highByte(TRANSMITPERIOD));			//[2 byte][1-65536]ms
+   	  		    EEPROM.write(12, lowByte(TRANSMITPERIOD)); 			//[2 byte][1-65536]ms
+            }else if(Button_Yellow_state==0){
+              TRANSMITPERIOD--;
+              if (TRANSMITPERIOD<=1) {TRANSMITPERIOD = 1;}
+              Serial.printf("TRANSMITPERIOD: %d\n", TRANSMITPERIOD);
+              EEPROM.write(11, highByte(TRANSMITPERIOD));			//[2 byte][1-65536]ms
+   	  		    EEPROM.write(12, lowByte(TRANSMITPERIOD)); 			//[2 byte][1-65536]ms
+            } 
+            
+         
+          }
           
-          if(Button_Red_state==0){Display_selection=0;EEPROM.commit();}
+          if(Button_Red_state==0){EEPROM.commit();EnterToMenu();}
 
           break;      
 
         case 2://RF ID settings 
           u8g2.setFont(u8g2_font_helvR08_tr);
-          u8g2.drawButtonUTF8(63, 10, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "RF ID settings" );
+          u8g2.drawButtonUTF8(63, 8, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "RF ID settings" );
 
           u8g2.setFontMode(1);  /* activate transparent font mode */
           u8g2.setDrawColor(1); /* color 1 for the box */
@@ -1135,7 +1181,7 @@ void DisplayUpdater(){
 
 
 
-          if(Button_Red_state==0){Display_selection=0;EEPROM.commit();}
+          if(Button_Red_state==0){EEPROM.commit();EnterToMenu();}
           break;
            
         case 3://Buzzer/Led On/Off
@@ -1187,7 +1233,7 @@ void DisplayUpdater(){
             Serial.printf("LEDIntensity: %d\n",LEDIntensity);
           }
           if(Display_SettingsSelection != 2){LED_Settings=false;}
-          if(Button_Red_state==0){Display_selection=0;LED_Settings=false;EEPROM.commit();}
+          if(Button_Red_state==0){LED_Settings=false;EEPROM.commit();EnterToMenu();}
           break;
 
         case 4://Signal Decoding //SignalDecoding
@@ -1209,7 +1255,7 @@ void DisplayUpdater(){
             EEPROM.write(10,SignalDecoding);
             Serial.printf("SignalDecoding: %d\n",SignalDecoding);
           }
-          if(Button_Red_state==0){Display_selection=0;EEPROM.commit();}
+          if(Button_Red_state==0){EEPROM.commit();EnterToMenu();}
           break;
         case 5://Buzzer/LED Test
           u8g2.setFont(u8g2_font_helvR08_tr);
@@ -1268,13 +1314,13 @@ void DisplayUpdater(){
               LEDTimer=LEDTimer-5;
             }
           }
-          if(Button_Red_state==0){Display_selection=0;}
+          if(Button_Red_state==0){EnterToMenu();}
 
           break;
 
         case 6://ClearSky Logo
           u8g2.drawXBM( 0, 0, ClearSky_Startup_width, ClearSky_Startup_height, ClearSky_Startup_bits);
-          if(Button_Red_state==0){Display_selection=0;}
+          if(Button_Red_state==0){EnterToMenu();}
           break;    
 
         case 7://Wifi Settings
@@ -1313,11 +1359,141 @@ void DisplayUpdater(){
           }
 
 
-          if(Button_Red_state==0){Display_selection=0;}
+          if(Button_Red_state==0){EnterToMenu();}
           break;
 
+        case 8://SendRFCommand
+          u8g2.setFont(u8g2_font_helvR08_tr);
+          u8g2.drawButtonUTF8(63, 8, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "Send RF command" );
 
-        case 8://Reset Settings
+          u8g2.setFontMode(1);  /* activate transparent font mode */
+          u8g2.setDrawColor(1); /* color 1 for the box */
+          if(Display_SettingsSelection==0){u8g2.drawBox(0, 10, 128, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,18);u8g2.printf("Turn On Wifi!");
+          if(Display_SettingsSelection==1){u8g2.drawBox(0, 20, 128, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,28);u8g2.printf("Turn OFF Wifi!");
+          if(Display_SettingsSelection==2){u8g2.drawBox(0, 30, 128, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,38);u8g2.printf("Reset Bomb");
+          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 40, 100, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==3 && Display_SubSettingsSelection == 1){u8g2.drawBox(100, 40, 100, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,48);u8g2.printf("Set Bomb phase");
+          u8g2.setCursor(100,48);u8g2.printf("%d",BombPhase);
+          if(Display_SettingsSelection==4){u8g2.drawBox(0, 50, 128, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,58);u8g2.printf("Send Bomb phase");
+
+
+          if(Button_Blue_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection--;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
+          if(Button_Yellow_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection++;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
+          if(Display_SettingsSelection<0 || Display_SettingsSelection >= 5){Display_SettingsSelection=0;}
+
+          if(Button_Green_state == 0 && Display_SettingsSelection == 3){Display_SubSettingsSelection = !Display_SubSettingsSelection;}
+
+          if(Display_SettingsSelection == 0 && Button_Green_state==0){
+            //Send turn on wifi!
+            char payload[] = "Turn on WiFi!";
+            sendSize = 13;
+            radio.send(GATEWAYID, payload, sendSize);
+            Serial.printf("Turn on Wifi Sent!");
+          }
+
+          if(Display_SettingsSelection == 1 && Button_Green_state==0){
+            //Send turn off wifi!
+            char payload[] = "Turn off WiFi!";
+            sendSize = 14;
+            radio.send(GATEWAYID, payload, sendSize);
+            Serial.printf("Turn off Wifi Sent!");
+          }
+
+          if(Display_SettingsSelection == 2 && Button_Green_state==0){
+            //Send Reset bomb
+            char payload[] = "Reset Bomb!";
+            sendSize = 16;
+            radio.send(GATEWAYID, payload, sendSize);
+            Serial.printf("Reset Bomb sent!");
+          }
+
+          if(Display_SettingsSelection == 3 && Display_SubSettingsSelection==1){
+            if(Button_Blue_state==0){
+              BombPhase++;
+            }else if(Button_Yellow_state==0){
+              BombPhase--;
+            }
+            if(BombPhase <=0){BombPhase=0;}
+            else if(BombPhase >=6){BombPhase=6;}
+          }
+
+          if(Display_SettingsSelection == 4 && Button_Green_state==0){
+            //Send Reset bomb
+            char payload[] = "Bomb Phase:";
+            payload[11] = BombPhase+48;
+            sendSize = 12;
+            radio.send(GATEWAYID, payload, sendSize);
+            Serial.printf("Bomb Phase: %d sent!", BombPhase);
+          }
+
+
+          if(Button_Red_state==0){EnterToMenu();}
+
+
+          break;
+
+        case 9://Reset Settings
+          u8g2.setFont(u8g2_font_helvR08_tr);
+          u8g2.drawButtonUTF8(63, 10, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "Screen Settings" );
+
+          u8g2.setFontMode(1);  /* activate transparent font mode */
+          u8g2.setDrawColor(1); /* color 1 for the box */
+          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 10, 90, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==0 && Display_SubSettingsSelection == 1){u8g2.drawBox(90, 10, 90, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,18);u8g2.printf("ScreenUpdateRate:");
+          u8g2.setCursor(90,18);u8g2.printf("%dms",DisplayUpdateRate*100);
+          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 0){u8g2.drawBox(0, 20, 90, 8);u8g2.setDrawColor(2);}
+          if(Display_SettingsSelection==1 && Display_SubSettingsSelection == 1){u8g2.drawBox(90, 20, 90, 8);u8g2.setDrawColor(2);}
+          u8g2.setCursor(0,28);u8g2.printf("AliveAnimRate:");
+          u8g2.setCursor(90,28);u8g2.printf("%dms",AliveAnimationRate*100);
+          
+          
+
+          
+          if(Button_Blue_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection--;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
+          if(Button_Yellow_state==0 && Display_SubSettingsSelection == 0){Display_SettingsSelection++;Serial.printf("Display_SettingsSelection: %d\n",Display_SettingsSelection);}
+          if(Display_SettingsSelection<0 || Display_SettingsSelection >= 2){Display_SettingsSelection=0;}
+
+          if(Button_Green_state == 0){Display_SubSettingsSelection = !Display_SubSettingsSelection;}
+
+
+          if(Display_SettingsSelection == 0 && Display_SubSettingsSelection==1){
+            if(Button_Blue_state==0){
+              DisplayUpdateRate++;
+              if (DisplayUpdateRate>255) {DisplayUpdateRate = 255;}
+              EEPROM.write(13, DisplayUpdateRate);
+            }else if(Button_Yellow_state==0){
+              DisplayUpdateRate--;
+              if (DisplayUpdateRate<1) {DisplayUpdateRate = 1;}
+              EEPROM.write(13, DisplayUpdateRate);
+            }          
+          }
+          if(Display_SettingsSelection == 1 && Display_SubSettingsSelection==1){
+            if(Button_Blue_state==0){
+              AliveAnimationRate++;
+              if (AliveAnimationRate>255) {AliveAnimationRate = 255;}
+              EEPROM.write(14, AliveAnimationRate);
+            }else if(Button_Yellow_state==0){
+              AliveAnimationRate--;
+              if (AliveAnimationRate<0) {AliveAnimationRate = 0;}
+              EEPROM.write(14, AliveAnimationRate);
+            }          
+          }
+
+            
+         
+          
+          
+          if(Button_Red_state==0){EEPROM.commit();EnterToMenu();}
+
+          break;
+
+        case 10://Reset Settings
           u8g2.setFont(u8g2_font_helvR08_tr);
           u8g2.drawButtonUTF8(63, 10, U8G2_BTN_HCENTER|U8G2_BTN_BW0, 0,  0,  0, "Reset Factory Settings" );
 
@@ -1358,10 +1534,14 @@ void DisplayUpdater(){
             LED_ON          = 1;    EEPROM.write(8, LED_ON);
             LEDIntensity    = 255;  EEPROM.write(9, LEDIntensity);
             SignalDecoding  = 1;    EEPROM.write(10,SignalDecoding);
+            TRANSMITPERIOD  = 5;  EEPROM.write(11, highByte(TRANSMITPERIOD));			//[2 byte][1-65536]ms
+   	  		                          EEPROM.write(12, lowByte(TRANSMITPERIOD)); 			//[2 byte][1-65536]ms
+            DisplayUpdateRate  = 1;  EEPROM.write(13,DisplayUpdateRate);
+            AliveAnimationRate  = 1;  EEPROM.write(14,AliveAnimationRate);
             EEPROM.commit();
           }
 
-          if(Button_Red_state==0){Display_selection=0;}
+          if(Button_Red_state==0){EnterToMenu();}
           break;      
 
       }
@@ -1381,7 +1561,7 @@ void DisplayUpdater(){
 void AliveAnimation(){
 
 
-  if (millis() - previousMillis_LoadingIcon >= 100) {
+  if (millis() - previousMillis_LoadingIcon >= AliveAnimationRate*100) {
     // save the last time you blinked the LED
     previousMillis_LoadingIcon = millis();
     IconState++;
@@ -1542,16 +1722,8 @@ if(millis()-MenuTimer>3000 &&
   MenuFlag = false;
   Display_SettingsSelection = 0;
   Display_SubSettingsSelection = 0;
+  EnterToMenu();
 
-u8g2.setFont(u8g2_font_6x12_tr);
-
-esp_task_wdt_init(6000, true); //enable panic so ESP32 restarts
-Display_selection = u8g2.userInterfaceSelectionList(
-    "Echo Detector Menu",
-    Display_selection, 
-    string_list);
-Serial.printf("current_selection: %d\n",Display_selection);
-esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
 
 } 
 
@@ -1561,6 +1733,18 @@ esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
   Button_Yellow_state_Prev = Button_Yellow_state;
   Button_Green_state_Prev = Button_Green_state;
   Button_Red_state_Prev = Button_Red_state;
+}
+
+void EnterToMenu(){
+  u8g2.setFont(u8g2_font_6x12_tr);
+
+  esp_task_wdt_init(6000, true); //enable panic so ESP32 restarts
+  Display_selection = u8g2.userInterfaceSelectionList(
+      "Echo Detector Menu",
+      Display_selection, 
+      string_list);
+  Serial.printf("current_selection: %d\n",Display_selection);
+  esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
 }
 
 void WatchDogFeeder(){

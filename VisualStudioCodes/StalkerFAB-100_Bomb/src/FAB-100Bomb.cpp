@@ -67,7 +67,8 @@ char WifiStatusReturn [7][100] =
 Adafruit_MPU6050 mpu;
 
 #include <FastLED.h>
-#define NUM_LEDS 6
+#define NUM_LEDS 12
+uint8_t NUM_LEDS_Glow = 2;
 #define DATA_PIN 33
 CRGB leds[NUM_LEDS];
 
@@ -83,7 +84,7 @@ CRGB leds[NUM_LEDS];
 // Address 0 is special (broadcast), messages to address 0 are received by all *listening* nodes (ie. active RX mode)
 // Gateway ID should be kept at ID=1 for simplicity, although this is not a hard constraint
 //*********************************************************************************************
-#define NODEID        2    // keep UNIQUE for each node on same network
+#define NODEID        9    // keep UNIQUE for each node on same network
 #define NETWORKID     100  // keep IDENTICAL on all nodes that talk to each other
 #define GATEWAYID     1    // "central" node
 
@@ -164,9 +165,13 @@ void CodingHandler();
 void BombPhaseHandler();
 void AccelerationHandler();
 void ConnectToWifi(uint16_t timeout);
+void WifiHandle();
 
 bool WifiStatus = false;
-
+bool EnableWifi = false;
+bool ConnectWifiFlag = false;
+bool TurnOffWifiFlag = false;
+unsigned long EnableWifi_timer = 0;
 
 uint8_t fadeAmount = 5; 
 uint8_t brightness = 5;
@@ -229,7 +234,7 @@ bool Unarmed=false;
 
 
 bool SendMsgFlag = true;
-bool ReciveMsgFlag = false;
+bool ReciveMsgFlag = true;
 
 
 const uint8_t GraphResPixel = 5;
@@ -245,7 +250,7 @@ int8_t Second_Y;
 
 int8_t BuzzerIntensity= 80;
 uint8_t BuzzerVolume = 100;
-uint8_t BuzzerPWM = 255;
+//uint8_t BuzzerPWM = 255;
 bool enableBuzzer= false;
 unsigned long previousMillis_Buzzer = 0;
 int delta = 2000;
@@ -426,6 +431,7 @@ ArduinoOTA
 
   ArduinoOTA.begin();
   WiFi.mode(WIFI_OFF);WifiStatus = false;
+  Serial.printf("WiFi.mode(WIFI_OFF);");
 
 
 esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
@@ -439,6 +445,9 @@ if(BombPhase == 255){
 }
 Serial.printf("BombPhase: %d\n", BombPhase);
 
+FastLED.clear();  // clear all pixel data
+FastLED.show();
+
 }
 
 
@@ -451,6 +460,7 @@ void loop() {
   if(ReciveMsgFlag == true){RFM_Recive_msg();}
   if(SendMsgFlag == true){RFM_Send_msg();}
   ButtonHandler();
+  //WifiHandle();
   //delay(1);
 
   //Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
@@ -458,23 +468,12 @@ void loop() {
  WatchDogFeeder();
  BombPhaseHandler();
  AccelerationHandler();
- //ArduinoOTA.handle();
+ ArduinoOTA.handle();
 
 if (enableGeiger== true)
 {
   Geiger(buzzerPin,BuzzerIntensity);
 }
-
-
-  if(enableBuzzer == true)
-  {
-        
-  }
-        
-
-   
-
-  
 
 
 
@@ -623,7 +622,7 @@ if (input == 'i') // print all available setup infos
     //BuzzerVolume
     if (input == 'h')
     {
-      //WiFi.disconnect(true);
+      WiFi.disconnect(true);
       WiFi.mode(WIFI_OFF);
       WifiStatus = false;
       Serial.printf("WiFi.mode(WIFI_OFF);");
@@ -650,55 +649,70 @@ if (input == 'i') // print all available setup infos
     }
     if (input == '.')
     {
-      BuzzerPWM--;
-      analogWrite(buzzerPin,BuzzerPWM);
-      Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        NUM_LEDS_Glow--;
+        if(NUM_LEDS_Glow<=0){NUM_LEDS_Glow=0;}
+        else if(NUM_LEDS_Glow>5){NUM_LEDS_Glow=5;}
+        Serial.printf("NUM_LEDS_Glow: %d\n",NUM_LEDS_Glow);
+
+        FastLED.clear();  // clear all pixel data
+        FastLED.show();
     }
     if (input == '-')
     {
-      BuzzerPWM++;
-      analogWrite(buzzerPin,BuzzerPWM);
-      Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
+        NUM_LEDS_Glow++;
+        if(NUM_LEDS_Glow<=0){NUM_LEDS_Glow=0;}
+        else if(NUM_LEDS_Glow>5){NUM_LEDS_Glow=5;}
+        Serial.printf("NUM_LEDS_Glow: %d\n",NUM_LEDS_Glow);
+
+        
+        FastLED.clear();  // clear all pixel data
+        FastLED.show();
+
     }
     if (input == 'q')
     {
-      //BuzzerPWM++;
-        for(int i=0;i<6;i++){
-        //Serial.printf("Start Meloday");
-        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
-        //analogWrite(buzzerPin,140);
-        digitalWrite(buzzerPin,1);
-        delay(150);
-        
-        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
-        //analogWrite(buzzerPin,0);
-        digitalWrite(buzzerPin,0);
-        delay(180);
-
-        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
-        digitalWrite(buzzerPin,1);
-        //analogWrite(buzzerPin,200);
-        delay(60);
-        
-        //Serial.printf("BuzzerPWM: %d\n",BuzzerPWM);
-        digitalWrite(buzzerPin,0);
-        //analogWrite(buzzerPin,0);
-        delay(600);
-        
+      BombPhase = 1;
+      EEPROM.write(0, 1);
+      EEPROM.commit();
+      Serial.printf("Reseting to default values now!\n");
+      ResetBombTimerFlag = false;
+      for(int b=0;b<2;b++){
+      digitalWrite(buzzerPin,1);
+      for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+      digitalWrite(buzzerPin,0);
+      for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
       }
+        
+    }
+    
+    if(input == 'f'){
+        BombPhase--;
+        if(BombPhase<0){BombPhase=0;}
+        else if(BombPhase>5){BombPhase=5;}
+        EEPROM.write(0, BombPhase);
+        EEPROM.commit();
+        Serial.printf("BombPhase: %d\n",BombPhase);
+    }
+    if(input == 'g'){
+         BombPhase++;
+         if(BombPhase<0){BombPhase=0;}
+        else if(BombPhase>6){BombPhase=6;}
+        EEPROM.write(0, BombPhase);
+        EEPROM.commit();
+        Serial.printf("BombPhase: %d\n",BombPhase);
     }
     if(input == 'a'){
-        for(int i= 0; i<NUM_LEDS;i++)
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow)
         {leds[i] = CRGB::Red;}
         FastLED.show();  
     }
     if(input == 's'){
-        for(int i= 0; i<NUM_LEDS;i++)
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow)
         {leds[i] = CRGB::Green;}
         FastLED.show();  
     }
     if(input == 'd'){
-        for(int i= 0; i<NUM_LEDS;i++)
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow)
         {leds[i] = CRGB::Blue;}
         FastLED.show();  
     }
@@ -730,33 +744,78 @@ if (radio.receiveDone())
     packetCount_Prev = packetCount; 
 
 
+if(strcmp(IncomingMsg_char, "Turn on WiFi!") == 0){
+    Serial.printf("Turn on Wifi\n");
+    ConnectToWifi(5000);
 
-for(int i=RSSI_LogSize-1; i>0;i--){
-  RSSI_Log[i]=RSSI_Log[i-1];
+
+}else if(strcmp(IncomingMsg_char, "Turn off WiFi!") == 0){
+WiFi.disconnect(true);
+      WiFi.mode(WIFI_OFF);
+      WifiStatus = false;
+      Serial.printf("WiFi.mode(WIFI_OFF);");
+}else if(strcmp(IncomingMsg_char, "Reset Bomb!") == 0){
+  BombPhase = 1;
+  NUM_LEDS_Glow = 1;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+  ESP.restart();
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:0") == 0){
+  BombPhase = 0;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:1") == 0){
+  BombPhase = 1;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:2") == 0){
+  BombPhase = 2;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:3") == 0){
+  BombPhase = 3;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:4") == 0){
+  BombPhase = 4;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:5") == 0){
+  BombPhase = 5;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
+}else if(strcmp(IncomingMsg_char, "Bomb Phase:6") == 0){
+  BombPhase = 6;
+  EEPROM.write(0, BombPhase);EEPROM.commit();
+  for(int b=0;b<2;b++){
+        digitalWrite(buzzerPin,1);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        digitalWrite(buzzerPin,0);for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+  }
 }
-RSSI_Log[0] = CurrentRSSI;
-BuzzerIntensity = map(CurrentRSSI,-100,-40,0,100);
-if (BuzzerIntensity>99) {BuzzerIntensity = 100;}
-if (BuzzerIntensity<=0) {BuzzerIntensity = 0;}
-//Geiger(buzzerPin,map(CurrentRSSI,-100,-40,0,100));
 
-//SerialPrint Diagram
-    //for(int i=0; i<RSSI_LogSize;i++)
-    //{Serial.printf("[%d]",RSSI_Log[i]);}
-    //uint8_t VisualiseSection = 100/GraphResPixel; //-->20
-    //Serial.printf("\n GraphResPixel: %d , VisualiseSection: %d\n",GraphResPixel, VisualiseSection);
-    //for (int i = 0;i<VisualiseSection; i++){
-//
-    //  First_X = 25+i*GraphResPixel;
-    //  Second_X = 25+5+i*GraphResPixel;
-//
-    //  First_RSSI = RSSI_Log[VisualiseSection-i];
-    //  Second_RSSI = RSSI_Log[VisualiseSection-1-i];
-    //  
-    //  First_Y = map(First_RSSI,-100,-10,62,34);
-    //  Second_Y = map(Second_RSSI,-100,-10,62,34);
-    //  Serial.printf("|i:%d F_X:%d F_Y:%d/%d S_X:%d S_Y:%d/%d| \n", i, First_X,First_RSSI,First_Y,Second_X,Second_RSSI,Second_Y);
-    //}
+
+
 
 //-----------ACK------------------
 //    if (radio.ACKRequested())
@@ -835,11 +894,14 @@ void RFM_Send_msg(){
         SentMsg[i] = (char)payload[i];
       }
         
+      TRANSMITPERIOD = 500;
       sentMSGCounter++;
       sendSize++;
       if(sendSize>=10){
         sendSize=10;
       }
+      
+      
       //radio.send(GATEWAYID, payload, sendSize);
       radio.send(GATEWAYID, payload, sendSize);
       //if (radio.sendWithRetry(GATEWAYID, payload, sendSize))
@@ -981,9 +1043,9 @@ if(millis()-ResetBombTimer>5000 &&
   ResetBombTimerFlag = false;
   for(int b=0;b<2;b++){
         digitalWrite(buzzerPin,1);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,0);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Black;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Black;}FastLED.show();delay(250);
   }
 } 
 
@@ -1044,7 +1106,7 @@ void BombPhaseHandler(){
       Geiger(buzzerPin,80);
       if (millis() - previousMillis_LEDFadeTimer >= 50) {
         previousMillis_LEDFadeTimer = millis();
-        for(int i = 0; i < NUM_LEDS; i++ ){
+        for(int i = 0; i < NUM_LEDS; i=i+NUM_LEDS_Glow ){
           switch (ColorChangeNum){
             case 0:leds[i] = CRGB::Green;break;
             case 1:leds[i] = CRGB::Blue;break;
@@ -1083,11 +1145,11 @@ void BombPhaseHandler(){
 
       for(int b=0;b<10;b++){
         digitalWrite(buzzerPin,1);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,0);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Green;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Green;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,1);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,0);
         esp_task_wdt_reset();   
       }
@@ -1112,10 +1174,12 @@ void BombPhaseHandler(){
           BombPhase = 4;
           EEPROM.write(0, BombPhase);EEPROM.commit();
           Serial.printf("----SWITCHING to Phase4----\n");
-          for(int i=0;i<10;i++){
-            digitalWrite(buzzerPin,1);delay(100);
-            digitalWrite(buzzerPin,0);delay(100);
+          for(int i=0;i<40;i++){
+            digitalWrite(buzzerPin,1);delay(50);
+            digitalWrite(buzzerPin,0);delay(50);
           }
+          digitalWrite(buzzerPin,1);delay(3000);
+          digitalWrite(buzzerPin,0);
         }
 
 
@@ -1123,28 +1187,28 @@ void BombPhaseHandler(){
         delta = millis() - previousMillis_Buzzer;
         if (delta >= 0 && delta <150){
           digitalWrite(buzzerPin,1);//delay(150);
-          for(int i= 0; i<NUM_LEDS;i++){
+          for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){
             leds[i] = CRGB::Green;
           }
           FastLED.show();
         }
         else if (delta >= 150 && delta <330){
           digitalWrite(buzzerPin,0);//delay(180);
-          for(int i= 0; i<NUM_LEDS;i++){
+          for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){
             leds[i] = CRGB::Green;
           }
           FastLED.show();
         }
         else if(delta >= 330 && delta <390){
           digitalWrite(buzzerPin,1);//delay(60);
-          for(int i= 0; i<NUM_LEDS;i++){
+          for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){
             leds[i] = CRGB::Red;
           }
           FastLED.show();
         }
         else if (delta >= 390 && delta <990){
           digitalWrite(buzzerPin,0);//delay(600);
-          for(int i= 0; i<NUM_LEDS;i++){
+          for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){
             leds[i] = CRGB::Red;
           }
         FastLED.show();
@@ -1154,9 +1218,9 @@ void BombPhaseHandler(){
         }
       break;
 
-    case 4:
+    case 4: //Unarmed!
       Geiger(buzzerPin,70);
-      if (millis() - previousMillis_LEDFadeTimer >= 50) {
+      if (millis() - previousMillis_LEDFadeTimer >= 25) {
         previousMillis_LEDFadeTimer = millis();
         for(int i = 0; i < NUM_LEDS; i++ ){
           //switch (ColorChangeNum){
@@ -1193,14 +1257,14 @@ void BombPhaseHandler(){
       }
       break;
     case 5:
-      
+      Geiger(buzzerPin,95);
       for(int b=0;b<10;b++){
         digitalWrite(buzzerPin,1);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Red;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Red;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,0);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Green;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Green;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,1);
-        for(int i= 0; i<NUM_LEDS;i++){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
+        for(int i= 0; i<NUM_LEDS;i=i+NUM_LEDS_Glow){leds[i] = CRGB::Blue;}FastLED.show();delay(250);
         digitalWrite(buzzerPin,0);
         esp_task_wdt_reset();  
       }
@@ -1208,7 +1272,7 @@ void BombPhaseHandler(){
       EEPROM.write(0, BombPhase);EEPROM.commit();
       Serial.printf("----SWITCHING to Phase6----\n");
       previousMillis_UnstableTimer = millis();
-      UnstableTimer = 60*60*1000;//-->1 hour 
+      UnstableTimer = 0.5*60*1000;//-->1 hour 
       ColorChangeNum = 0;
       break;
     case 6:
@@ -1268,11 +1332,11 @@ float MaxAcceleration = max(deltaX, deltaY);
 MaxAcceleration = max(MaxAcceleration, deltaZ);
 //Serial.printf("DeltaAcceleration: %f\n", MaxAcceleration);
 
-if(MaxAcceleration >= 4){
+if(MaxAcceleration >= 5){
   LightMotionDetected = true;
   Serial.printf("LightMotionDetected: %f\n", MaxAcceleration);
 }
-if(MaxAcceleration >= 5){
+if(MaxAcceleration >= 8){
   HardMotionDetected = true;
   Serial.printf("HardMotionDetected: %f\n", MaxAcceleration);
 }
@@ -1287,12 +1351,19 @@ AccelZ_Prev = a.acceleration.z;
 
 
 void ConnectToWifi(uint16_t timeout){
+    esp_task_wdt_init(6000, true); //enable panic so ESP32 restarts
     WiFi.mode(WIFI_STA);
+    //Serial.println("WiFi.mode(WIFI_STA);"); 
     WifiStatus = true;
+    WiFi.disconnect();
+    //Serial.println("WiFi.disconnect();"); 
     WiFi.begin(ssid, password);
+    //Serial.println("WiFi.begin(ssid, password);"); 
     uint8_t WifiTimeoutCounter = 0;
     uint32_t start = millis();
-    while (WiFi.status() != WL_CONNECTED && millis()-start < timeout){}
+    while (WiFi.status() != WL_CONNECTED && millis()-start < timeout){
+      Serial.printf("Time: %d\r", millis()-start);
+    }
 //
     if(millis()-start <= timeout){
       Serial.printf("Successfully connected to the Wifi! Connection time: %dms\n", millis()-start);
@@ -1300,6 +1371,58 @@ void ConnectToWifi(uint16_t timeout){
       Serial.print("Local IP address: "); Serial.println(WiFi.localIP());
       
     }else{
-      Serial.println("Timeout! Couldn't connect!"); 
+      Serial.println("Timeout! Couldn't connect!");
+
     }
+    esp_task_wdt_init(WDT_TIMEOUT, true); //enable panic so ESP32 restarts
 }
+
+//void WifiHandle(){
+//  if(EnableWifi==true){
+//    EnableWifi_timer = millis();
+//    TurnOffWifiFlag = true;
+//    TRANSMITPERIOD = 1000;
+//  } 
+//  if(EnableWifi==true && ConnectWifiFlag == false){
+//    ConnectToWifi(5000);
+//    ConnectWifiFlag = true;
+//    //payload[i]=
+//    String  IP = WiFi.localIP().toString();
+//    int str_len = IP.length(); 
+//    //Serial.printf("String: %s, len: %d\n", IP, str_len);
+//    sendSize = str_len;
+//    //TRANSMITPERIOD = 1000;
+//
+//    IP.toCharArray(payload, str_len);
+//
+//    Serial.print("asdasdSending[");
+//      Serial.print(sendSize);
+//      Serial.print("]: ");
+//      for(byte i = 0; i < sendSize; i++){
+//        Serial.print((char)payload[i]);
+//        SentMsg[i] = (char)payload[i];
+//      }
+//    Serial.println();
+//    TRANSMITPERIOD = 1000;
+//    
+//
+// 
+//
+//    
+//
+//    //strcpy(payload, WiFi.localIP().toString());
+//  } 
+//
+//
+//
+//  if (millis() - EnableWifi_timer >= 10000 && TurnOffWifiFlag == true) {
+//        EnableWifi =false;
+//        WiFi.disconnect();
+//        WiFi.mode(WIFI_OFF);
+//        WifiStatus = false;
+//        Serial.printf("Turn OFF WiFi!\n"); 
+//        TurnOffWifiFlag = false;
+//        ConnectWifiFlag = false;
+//  }
+//  EnableWifi =false;
+//}
