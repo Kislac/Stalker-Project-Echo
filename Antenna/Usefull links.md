@@ -3,11 +3,13 @@ Useful links about how to make antenna
     <li> https://m0ukd.com/calculators/quarter-wave-ground-plane-antenna-calculator/  </li>
     <li> https://ctrfantennasinc.com/what-is-a-1-4-wave-antenna/                      </li>
     <li> https://www.instructables.com/433-MHz-Coil-loaded-antenna/                   </li>
+    <li> https://learn.sparkfun.com/tutorials/rfm69hcw-hookup-guide/all               </li>
   </ol>
+  Only some of the sparkfun antenna ideas could work, (2nd, 4th, 5th)
 Useful videos about how to make antenna
   <ol>
     <li> https://www.youtube.com/watch?v=_pjcEKQY_Tk  </li>
-    <li> https://www.youtube.com/watch?v=6cVYsHCLKq8                      </li>
+    <li> https://www.youtube.com/watch?v=6cVYsHCLKq8  </li>
   </ol>
 Useful links about where to buy antenna
 
