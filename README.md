@@ -5,7 +5,7 @@ Photos about the project:
 https://photos.app.goo.gl/sLBr1bHFhkoqBgjx7
 
 
-Main goal was buid a long range localizator based on RadioFrequiency signal streght, to make a Stalker Echo detector replica, which actually can search for anomalies with a (With a reciever module) for an Airsoft LARP.
+Main goal was buid a long range localizator based on RadioFrequiency signal strength, to make a Stalker Echo detector replica, which actually can search for anomalies with a (With a reciever module) for an Airsoft LARP.
 
 Within this project we have created 3 working device:
 - Stalker Echo detector
