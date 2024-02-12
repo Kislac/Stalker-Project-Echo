@@ -9,12 +9,18 @@ Main goal was buid a long range localizator based on RadioFrequiency signal stre
 
 Within this project we have created 3 working device:
 - Stalker Echo detector
+
+https://www.thingiverse.com/thing:6482542
+
 <img src="https://github.com/Kislac/Stalker-RFM/assets/34631881/71e75273-1545-4a7f-be1f-2332e5d9e567" width="400" title="Stalker Echo detector">
 
 - Plant anomaly
 <img src="https://github.com/Kislac/Stalker-RFM/assets/34631881/2ca0c38a-552d-4461-bd28-e93f631ab484" width="400" title="Plant anomaly">
 
 - Bomb anomaly
+
+https://www.thingiverse.com/thing:6482546
+  
 <img src="https://github.com/Kislac/Stalker-RFM/assets/34631881/8be3693c-ebb9-46e1-a7db-bec9fbfefb88" width="400" title="Bomb anomaly">
 
 
